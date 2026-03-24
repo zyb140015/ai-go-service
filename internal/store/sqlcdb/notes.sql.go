@@ -7,7 +7,25 @@ package sqlcdb
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const countNotes = `-- name: CountNotes :one
+SELECT COUNT(*)
+FROM app_notes
+WHERE CASE
+    WHEN $1::text IS NULL OR $1::text = '' THEN TRUE
+    ELSE title ILIKE '%' || $1::text || '%'
+END
+`
+
+func (q *Queries) CountNotes(ctx context.Context, queryText pgtype.Text) (int64, error) {
+	row := q.db.QueryRow(ctx, countNotes, queryText)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
 
 const createNote = `-- name: CreateNote :one
 INSERT INTO app_notes (
@@ -73,11 +91,36 @@ func (q *Queries) GetNoteByID(ctx context.Context, id int64) (AppNote, error) {
 const listNotes = `-- name: ListNotes :many
 SELECT id, title, body, created_at, updated_at
 FROM app_notes
-ORDER BY created_at DESC, id DESC
+WHERE CASE
+    WHEN $1::text IS NULL OR $1::text = '' THEN TRUE
+    ELSE title ILIKE '%' || $1::text || '%'
+END
+ORDER BY
+    CASE WHEN $2::text = 'title' AND $3::text = 'asc' THEN title END ASC,
+    CASE WHEN $2::text = 'title' AND $3::text = 'desc' THEN title END DESC,
+    CASE WHEN $2::text = 'created_at' AND $3::text = 'asc' THEN created_at END ASC,
+    CASE WHEN $2::text = 'created_at' AND $3::text = 'desc' THEN created_at END DESC,
+    id DESC
+LIMIT $5
+OFFSET $4
 `
 
-func (q *Queries) ListNotes(ctx context.Context) ([]AppNote, error) {
-	rows, err := q.db.Query(ctx, listNotes)
+type ListNotesParams struct {
+	QueryText     pgtype.Text
+	SortField     string
+	SortDirection string
+	OffsetCount   int32
+	LimitCount    int32
+}
+
+func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]AppNote, error) {
+	rows, err := q.db.Query(ctx, listNotes,
+		arg.QueryText,
+		arg.SortField,
+		arg.SortDirection,
+		arg.OffsetCount,
+		arg.LimitCount,
+	)
 	if err != nil {
 		return nil, err
 	}

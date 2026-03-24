@@ -60,7 +60,7 @@ curl -X POST http://localhost:8080/notes/ \
 List notes:
 
 ```bash
-curl http://localhost:8080/notes/
+curl "http://localhost:8080/notes/?page=1&pageSize=10&sort=created_at&order=desc&q=hello"
 ```
 
 Get one note:
@@ -82,6 +82,21 @@ Delete a note:
 ```bash
 curl -X DELETE http://localhost:8080/notes/1
 ```
+
+### Notes list query parameters
+
+- `page`: 1-based page number, default `1`
+- `pageSize`: items per page, default `20`, max `100`
+- `q`: optional case-insensitive title filter
+- `sort`: `created_at` or `title`, default `created_at`
+- `order`: `asc` or `desc`, default `desc`
+
+The list response includes a `meta` block with the resolved paging, sorting, filter, and total count.
+
+## API docs
+
+- Swagger UI: `http://localhost:8080/docs`
+- OpenAPI spec: `http://localhost:8080/openapi.yaml`
 
 ## Configuration
 

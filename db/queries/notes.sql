@@ -11,7 +11,26 @@ RETURNING id, title, body, created_at, updated_at;
 -- name: ListNotes :many
 SELECT id, title, body, created_at, updated_at
 FROM app_notes
-ORDER BY created_at DESC, id DESC;
+WHERE CASE
+    WHEN sqlc.narg(query_text)::text IS NULL OR sqlc.narg(query_text)::text = '' THEN TRUE
+    ELSE title ILIKE '%' || sqlc.narg(query_text)::text || '%'
+END
+ORDER BY
+    CASE WHEN sqlc.arg(sort_field)::text = 'title' AND sqlc.arg(sort_direction)::text = 'asc' THEN title END ASC,
+    CASE WHEN sqlc.arg(sort_field)::text = 'title' AND sqlc.arg(sort_direction)::text = 'desc' THEN title END DESC,
+    CASE WHEN sqlc.arg(sort_field)::text = 'created_at' AND sqlc.arg(sort_direction)::text = 'asc' THEN created_at END ASC,
+    CASE WHEN sqlc.arg(sort_field)::text = 'created_at' AND sqlc.arg(sort_direction)::text = 'desc' THEN created_at END DESC,
+    id DESC
+LIMIT sqlc.arg(limit_count)
+OFFSET sqlc.arg(offset_count);
+
+-- name: CountNotes :one
+SELECT COUNT(*)
+FROM app_notes
+WHERE CASE
+    WHEN sqlc.narg(query_text)::text IS NULL OR sqlc.narg(query_text)::text = '' THEN TRUE
+    ELSE title ILIKE '%' || sqlc.narg(query_text)::text || '%'
+END;
 
 -- name: GetNoteByID :one
 SELECT id, title, body, created_at, updated_at

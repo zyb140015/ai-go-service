@@ -17,7 +17,7 @@ import (
 // NoteService defines the note use cases exposed to the HTTP layer.
 type NoteService interface {
 	CreateNote(ctx context.Context, title string, body string) (domain.Note, error)
-	ListNotes(ctx context.Context) ([]domain.Note, error)
+	ListNotes(ctx context.Context, options service.NoteListOptions) (service.NoteListResult, error)
 	GetNote(ctx context.Context, id int64) (domain.Note, error)
 	UpdateNote(ctx context.Context, id int64, title string, body string) (domain.Note, error)
 	DeleteNote(ctx context.Context, id int64) error
@@ -47,6 +47,17 @@ type NoteResponse struct {
 // NotesResponse wraps the note list response in a stable top-level field.
 type NotesResponse struct {
 	Items []NoteResponse `json:"items"`
+	Meta  NotesMeta      `json:"meta"`
+}
+
+// NotesMeta describes list-note pagination and sorting metadata.
+type NotesMeta struct {
+	Page          int32  `json:"page"`
+	PageSize      int32  `json:"pageSize"`
+	Total         int64  `json:"total"`
+	SortField     string `json:"sort"`
+	SortDirection string `json:"order"`
+	Query         string `json:"q,omitempty"`
 }
 
 // CreateNoteHandler returns an HTTP handler that creates notes.
@@ -81,18 +92,33 @@ func ListNotesHandler(noteService NoteService) http.HandlerFunc {
 			return
 		}
 
-		notes, err := noteService.ListNotes(r.Context())
+		options, ok := parseNoteListOptions(w, r)
+		if !ok {
+			return
+		}
+
+		result, err := noteService.ListNotes(r.Context(), options)
 		if err != nil {
 			handleNoteError(w, err)
 			return
 		}
 
-		items := make([]NoteResponse, 0, len(notes))
-		for _, note := range notes {
+		items := make([]NoteResponse, 0, len(result.Items))
+		for _, note := range result.Items {
 			items = append(items, toNoteResponse(note))
 		}
 
-		response.JSON(w, http.StatusOK, NotesResponse{Items: items})
+		response.JSON(w, http.StatusOK, NotesResponse{
+			Items: items,
+			Meta: NotesMeta{
+				Page:          result.Page,
+				PageSize:      result.PageSize,
+				Total:         result.Total,
+				SortField:     result.SortField,
+				SortDirection: result.SortDirection,
+				Query:         result.Query,
+			},
+		})
 	}
 }
 
@@ -198,6 +224,41 @@ func parseNoteID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	}
 
 	return noteID, true
+}
+
+func parseNoteListOptions(w http.ResponseWriter, r *http.Request) (service.NoteListOptions, bool) {
+	page, ok := parsePositiveInt32Query(w, r, "page")
+	if !ok {
+		return service.NoteListOptions{}, false
+	}
+
+	pageSize, ok := parsePositiveInt32Query(w, r, "pageSize")
+	if !ok {
+		return service.NoteListOptions{}, false
+	}
+
+	return service.NoteListOptions{
+		Page:          page,
+		PageSize:      pageSize,
+		Query:         r.URL.Query().Get("q"),
+		SortField:     r.URL.Query().Get("sort"),
+		SortDirection: r.URL.Query().Get("order"),
+	}, true
+}
+
+func parsePositiveInt32Query(w http.ResponseWriter, r *http.Request, key string) (int32, bool) {
+	value := r.URL.Query().Get(key)
+	if value == "" {
+		return 0, true
+	}
+
+	parsedValue, err := strconv.ParseInt(value, 10, 32)
+	if err != nil || parsedValue < 1 {
+		response.Error(w, http.StatusBadRequest, response.CodeInvalidRequest, key+" must be a positive integer")
+		return 0, false
+	}
+
+	return int32(parsedValue), true
 }
 
 func toNoteResponse(note domain.Note) NoteResponse {

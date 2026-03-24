@@ -1,0 +1,113 @@
+openapi: 3.1.0
+info:
+  title: ai-go-service API
+  version: 0.1.0
+  description: Minimal Go HTTP API service with notes CRUD, filtering, sorting, and pagination.
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Service is alive
+  /readyz:
+    get:
+      summary: Readiness probe
+      responses:
+        '200':
+          description: Service is ready
+        '503':
+          description: Service dependency is unavailable
+  /notes/:
+    get:
+      summary: List notes
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [created_at, title]
+        - in: query
+          name: order
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        '200':
+          description: Notes page
+    post:
+      summary: Create note
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteWriteRequest'
+      responses:
+        '201':
+          description: Note created
+  /notes/{noteID}:
+    get:
+      summary: Get note by id
+      parameters:
+        - $ref: '#/components/parameters/NoteID'
+      responses:
+        '200':
+          description: Note found
+        '404':
+          description: Note not found
+    put:
+      summary: Update note
+      parameters:
+        - $ref: '#/components/parameters/NoteID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteWriteRequest'
+      responses:
+        '200':
+          description: Note updated
+    delete:
+      summary: Delete note
+      parameters:
+        - $ref: '#/components/parameters/NoteID'
+      responses:
+        '204':
+          description: Note deleted
+components:
+  parameters:
+    NoteID:
+      in: path
+      name: noteID
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    NoteWriteRequest:
+      type: object
+      required: [title, body]
+      properties:
+        title:
+          type: string
+        body:
+          type: string

@@ -12,7 +12,7 @@ import (
 
 type noteRepositoryStub struct {
 	createFn  func(ctx context.Context, title string, body string) (domain.Note, error)
-	listFn    func(ctx context.Context) ([]domain.Note, error)
+	listFn    func(ctx context.Context, options service.NoteListOptions) ([]domain.Note, int64, error)
 	getByIDFn func(ctx context.Context, id int64) (domain.Note, error)
 	updateFn  func(ctx context.Context, id int64, title string, body string) (domain.Note, error)
 	deleteFn  func(ctx context.Context, id int64) error
@@ -22,8 +22,8 @@ func (stub noteRepositoryStub) Create(ctx context.Context, title string, body st
 	return stub.createFn(ctx, title, body)
 }
 
-func (stub noteRepositoryStub) List(ctx context.Context) ([]domain.Note, error) {
-	return stub.listFn(ctx)
+func (stub noteRepositoryStub) List(ctx context.Context, options service.NoteListOptions) ([]domain.Note, int64, error) {
+	return stub.listFn(ctx, options)
 }
 
 func (stub noteRepositoryStub) GetByID(ctx context.Context, id int64) (domain.Note, error) {
@@ -45,8 +45,8 @@ func TestCreateNoteTrimsInput(t *testing.T) {
 		createFn: func(_ context.Context, title string, body string) (domain.Note, error) {
 			return domain.Note{Title: title, Body: body}, nil
 		},
-		listFn: func(_ context.Context) ([]domain.Note, error) {
-			return nil, nil
+		listFn: func(_ context.Context, _ service.NoteListOptions) ([]domain.Note, int64, error) {
+			return nil, 0, nil
 		},
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) {
 			return domain.Note{}, nil
@@ -80,8 +80,8 @@ func TestCreateNoteRejectsBlankTitle(t *testing.T) {
 		createFn: func(_ context.Context, title string, body string) (domain.Note, error) {
 			return domain.Note{}, nil
 		},
-		listFn: func(_ context.Context) ([]domain.Note, error) {
-			return nil, nil
+		listFn: func(_ context.Context, _ service.NoteListOptions) ([]domain.Note, int64, error) {
+			return nil, 0, nil
 		},
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) {
 			return domain.Note{}, nil
@@ -105,7 +105,7 @@ func TestListNotesReturnsUnavailableWithoutRepository(t *testing.T) {
 
 	noteService := service.NewNoteService(nil)
 
-	_, err := noteService.ListNotes(context.Background())
+	_, err := noteService.ListNotes(context.Background(), service.NoteListOptions{})
 	if !errors.Is(err, service.ErrUnavailable) {
 		t.Fatalf("expected unavailable error, got %v", err)
 	}
@@ -119,8 +119,8 @@ func TestListNotesReturnsRepositoryData(t *testing.T) {
 		createFn: func(_ context.Context, title string, body string) (domain.Note, error) {
 			return domain.Note{}, nil
 		},
-		listFn: func(_ context.Context) ([]domain.Note, error) {
-			return []domain.Note{{ID: 1, Title: "demo", Body: "body", CreatedAt: createdAt, UpdatedAt: createdAt}}, nil
+		listFn: func(_ context.Context, _ service.NoteListOptions) ([]domain.Note, int64, error) {
+			return []domain.Note{{ID: 1, Title: "demo", Body: "body", CreatedAt: createdAt, UpdatedAt: createdAt}}, 1, nil
 		},
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) {
 			return domain.Note{}, nil
@@ -133,13 +133,17 @@ func TestListNotesReturnsRepositoryData(t *testing.T) {
 		},
 	})
 
-	notes, err := noteService.ListNotes(context.Background())
+	result, err := noteService.ListNotes(context.Background(), service.NoteListOptions{})
 	if err != nil {
 		t.Fatalf("list notes: %v", err)
 	}
 
-	if len(notes) != 1 {
-		t.Fatalf("expected 1 note, got %d", len(notes))
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 note, got %d", len(result.Items))
+	}
+
+	if result.Total != 1 {
+		t.Fatalf("expected total 1, got %d", result.Total)
 	}
 }
 
@@ -148,7 +152,7 @@ func TestGetNoteReturnsNotFound(t *testing.T) {
 
 	noteService := service.NewNoteService(noteRepositoryStub{
 		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn:   func(_ context.Context) ([]domain.Note, error) { return nil, nil },
+		listFn:   func(_ context.Context, _ service.NoteListOptions) ([]domain.Note, int64, error) { return nil, 0, nil },
 		getByIDFn: func(_ context.Context, _ int64) (domain.Note, error) {
 			return domain.Note{}, domain.ErrNotFound
 		},
@@ -167,7 +171,7 @@ func TestUpdateNoteReturnsNotFound(t *testing.T) {
 
 	noteService := service.NewNoteService(noteRepositoryStub{
 		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn:   func(_ context.Context) ([]domain.Note, error) { return nil, nil },
+		listFn:   func(_ context.Context, _ service.NoteListOptions) ([]domain.Note, int64, error) { return nil, 0, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) {
 			return domain.Note{}, domain.ErrNotFound
 		},
@@ -185,7 +189,7 @@ func TestDeleteNoteRejectsInvalidID(t *testing.T) {
 
 	noteService := service.NewNoteService(noteRepositoryStub{
 		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn:   func(_ context.Context) ([]domain.Note, error) { return nil, nil },
+		listFn:   func(_ context.Context, _ service.NoteListOptions) ([]domain.Note, int64, error) { return nil, 0, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
 	})

@@ -6,8 +6,10 @@ import (
 	"fmt"
 
 	"ai-go-service/internal/domain"
+	"ai-go-service/internal/service"
 	"ai-go-service/internal/store/sqlcdb"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // NoteRepository provides note persistence backed by PostgreSQL.
@@ -42,15 +44,33 @@ func (repository *NoteRepository) Create(ctx context.Context, title string, body
 	return mapNote(record), nil
 }
 
-// List returns all notes ordered from newest to oldest.
-func (repository *NoteRepository) List(ctx context.Context) ([]domain.Note, error) {
+// List returns one filtered page of notes and the matching total count.
+func (repository *NoteRepository) List(ctx context.Context, options service.NoteListOptions) ([]domain.Note, int64, error) {
 	if repository == nil || repository.queries == nil {
-		return nil, fmt.Errorf("note repository is unavailable")
+		return nil, 0, fmt.Errorf("note repository is unavailable")
 	}
 
-	records, err := repository.queries.ListNotes(ctx)
+	queryText := pgtype.Text{}
+	if options.Query != "" {
+		queryText.String = options.Query
+		queryText.Valid = true
+	}
+
+	total, err := repository.queries.CountNotes(ctx, queryText)
 	if err != nil {
-		return nil, fmt.Errorf("list notes: %w", err)
+		return nil, 0, fmt.Errorf("count notes: %w", err)
+	}
+
+	offsetCount := (options.Page - 1) * options.PageSize
+	records, err := repository.queries.ListNotes(ctx, sqlcdb.ListNotesParams{
+		QueryText:     queryText,
+		SortField:     options.SortField,
+		SortDirection: options.SortDirection,
+		OffsetCount:   offsetCount,
+		LimitCount:    options.PageSize,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("list notes: %w", err)
 	}
 
 	notes := make([]domain.Note, 0, len(records))
@@ -58,7 +78,7 @@ func (repository *NoteRepository) List(ctx context.Context) ([]domain.Note, erro
 		notes = append(notes, mapNote(record))
 	}
 
-	return notes, nil
+	return notes, total, nil
 }
 
 // GetByID returns one note by its identifier.

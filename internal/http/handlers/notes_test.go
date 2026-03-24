@@ -17,7 +17,7 @@ import (
 
 type noteServiceStub struct {
 	createFn func(ctx context.Context, title string, body string) (domain.Note, error)
-	listFn   func(ctx context.Context) ([]domain.Note, error)
+	listFn   func(ctx context.Context, options service.NoteListOptions) (service.NoteListResult, error)
 	getFn    func(ctx context.Context, id int64) (domain.Note, error)
 	updateFn func(ctx context.Context, id int64, title string, body string) (domain.Note, error)
 	deleteFn func(ctx context.Context, id int64) error
@@ -27,8 +27,8 @@ func (stub noteServiceStub) CreateNote(ctx context.Context, title string, body s
 	return stub.createFn(ctx, title, body)
 }
 
-func (stub noteServiceStub) ListNotes(ctx context.Context) ([]domain.Note, error) {
-	return stub.listFn(ctx)
+func (stub noteServiceStub) ListNotes(ctx context.Context, options service.NoteListOptions) (service.NoteListResult, error) {
+	return stub.listFn(ctx, options)
 }
 
 func (stub noteServiceStub) GetNote(ctx context.Context, id int64) (domain.Note, error) {
@@ -51,8 +51,8 @@ func TestCreateNoteReturnsCreatedNote(t *testing.T) {
 		createFn: func(_ context.Context, title string, body string) (domain.Note, error) {
 			return domain.Note{ID: 1, Title: title, Body: body, CreatedAt: createdAt, UpdatedAt: createdAt}, nil
 		},
-		listFn: func(_ context.Context) ([]domain.Note, error) {
-			return nil, nil
+		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+			return service.NoteListResult{}, nil
 		},
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
@@ -86,8 +86,8 @@ func TestCreateNoteRejectsInvalidRequest(t *testing.T) {
 		createFn: func(_ context.Context, title string, body string) (domain.Note, error) {
 			return domain.Note{}, service.ErrInvalidInput
 		},
-		listFn: func(_ context.Context) ([]domain.Note, error) {
-			return nil, nil
+		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+			return service.NoteListResult{}, nil
 		},
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
@@ -112,15 +112,23 @@ func TestListNotesReturnsItems(t *testing.T) {
 		createFn: func(_ context.Context, title string, body string) (domain.Note, error) {
 			return domain.Note{}, nil
 		},
-		listFn: func(_ context.Context) ([]domain.Note, error) {
-			return []domain.Note{{ID: 1, Title: "hello", Body: "world", CreatedAt: createdAt, UpdatedAt: createdAt}}, nil
+		listFn: func(_ context.Context, options service.NoteListOptions) (service.NoteListResult, error) {
+			return service.NoteListResult{
+				Items:         []domain.Note{{ID: 1, Title: "hello", Body: "world", CreatedAt: createdAt, UpdatedAt: createdAt}},
+				Total:         1,
+				Page:          options.Page,
+				PageSize:      options.PageSize,
+				SortField:     options.SortField,
+				SortDirection: options.SortDirection,
+				Query:         options.Query,
+			}, nil
 		},
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
 	})
 
-	request := httptest.NewRequest(http.MethodGet, "/notes/", nil)
+	request := httptest.NewRequest(http.MethodGet, "/notes/?page=2&pageSize=5&q=hel&sort=title&order=asc", nil)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, request)
@@ -131,6 +139,7 @@ func TestListNotesReturnsItems(t *testing.T) {
 
 	var body struct {
 		Items []map[string]any `json:"items"`
+		Meta  map[string]any   `json:"meta"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
@@ -138,6 +147,69 @@ func TestListNotesReturnsItems(t *testing.T) {
 
 	if len(body.Items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(body.Items))
+	}
+
+	if body.Meta["total"] != float64(1) {
+		t.Fatalf("expected total 1, got %#v", body.Meta["total"])
+	}
+
+	if body.Meta["page"] != float64(2) {
+		t.Fatalf("expected page 2, got %#v", body.Meta["page"])
+	}
+
+	if body.Meta["pageSize"] != float64(5) {
+		t.Fatalf("expected pageSize 5, got %#v", body.Meta["pageSize"])
+	}
+
+	if body.Meta["sort"] != "title" {
+		t.Fatalf("expected sort title, got %#v", body.Meta["sort"])
+	}
+
+	if body.Meta["order"] != "asc" {
+		t.Fatalf("expected order asc, got %#v", body.Meta["order"])
+	}
+}
+
+func TestListNotesRejectsInvalidPage(t *testing.T) {
+	t.Parallel()
+
+	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
+		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+			return service.NoteListResult{}, nil
+		},
+		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
+		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		deleteFn: func(_ context.Context, _ int64) error { return nil },
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/notes/?page=0", nil)
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Code)
+	}
+}
+
+func TestDocsRoutesReturnContent(t *testing.T) {
+	t.Parallel()
+
+	router := httpserver.NewRouter(newTestLogger(), nil, nil)
+
+	openAPIRequest := httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil)
+	openAPIRecorder := httptest.NewRecorder()
+	router.ServeHTTP(openAPIRecorder, openAPIRequest)
+	if openAPIRecorder.Code != http.StatusOK {
+		t.Fatalf("expected openapi status %d, got %d", http.StatusOK, openAPIRecorder.Code)
+	}
+
+	docsRequest := httptest.NewRequest(http.MethodGet, "/docs", nil)
+	docsRecorder := httptest.NewRecorder()
+	router.ServeHTTP(docsRecorder, docsRequest)
+	if docsRecorder.Code != http.StatusOK {
+		t.Fatalf("expected docs status %d, got %d", http.StatusOK, docsRecorder.Code)
 	}
 }
 
@@ -148,8 +220,8 @@ func TestListNotesReturnsServiceUnavailable(t *testing.T) {
 		createFn: func(_ context.Context, title string, body string) (domain.Note, error) {
 			return domain.Note{}, nil
 		},
-		listFn: func(_ context.Context) ([]domain.Note, error) {
-			return nil, service.ErrUnavailable
+		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+			return service.NoteListResult{}, service.ErrUnavailable
 		},
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
@@ -173,8 +245,8 @@ func TestCreateNoteReturnsInternalErrorOnUnexpectedFailure(t *testing.T) {
 		createFn: func(_ context.Context, title string, body string) (domain.Note, error) {
 			return domain.Note{}, errors.New("unexpected")
 		},
-		listFn: func(_ context.Context) ([]domain.Note, error) {
-			return nil, nil
+		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+			return service.NoteListResult{}, nil
 		},
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
@@ -197,8 +269,10 @@ func TestUpdateNoteReturnsUpdatedNote(t *testing.T) {
 	updatedAt := time.Date(2026, time.March, 24, 12, 0, 0, 0, time.UTC)
 	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
 		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn:   func(_ context.Context) ([]domain.Note, error) { return nil, nil },
-		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
+		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+			return service.NoteListResult{}, nil
+		},
+		getFn: func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, id int64, title string, body string) (domain.Note, error) {
 			return domain.Note{ID: id, Title: title, Body: body, CreatedAt: updatedAt, UpdatedAt: updatedAt}, nil
 		},
@@ -220,7 +294,9 @@ func TestUpdateNoteRejectsInvalidID(t *testing.T) {
 
 	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
 		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn:   func(_ context.Context) ([]domain.Note, error) { return nil, nil },
+		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+			return service.NoteListResult{}, nil
+		},
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
@@ -241,7 +317,9 @@ func TestDeleteNoteReturnsNoContent(t *testing.T) {
 
 	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
 		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn:   func(_ context.Context) ([]domain.Note, error) { return nil, nil },
+		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+			return service.NoteListResult{}, nil
+		},
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
@@ -262,7 +340,9 @@ func TestDeleteNoteReturnsNotFound(t *testing.T) {
 
 	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
 		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn:   func(_ context.Context) ([]domain.Note, error) { return nil, nil },
+		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+			return service.NoteListResult{}, nil
+		},
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return service.ErrNotFound },
@@ -284,7 +364,9 @@ func TestGetNoteReturnsItem(t *testing.T) {
 	createdAt := time.Date(2026, time.March, 24, 13, 0, 0, 0, time.UTC)
 	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
 		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn:   func(_ context.Context) ([]domain.Note, error) { return nil, nil },
+		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+			return service.NoteListResult{}, nil
+		},
 		getFn: func(_ context.Context, id int64) (domain.Note, error) {
 			return domain.Note{ID: id, Title: "hello", Body: "world", CreatedAt: createdAt, UpdatedAt: createdAt}, nil
 		},
@@ -307,7 +389,9 @@ func TestGetNoteReturnsNotFound(t *testing.T) {
 
 	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
 		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn:   func(_ context.Context) ([]domain.Note, error) { return nil, nil },
+		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+			return service.NoteListResult{}, nil
+		},
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, service.ErrNotFound },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },

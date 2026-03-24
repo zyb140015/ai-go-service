@@ -27,6 +27,8 @@ func NewRouter(logger *slog.Logger, readinessChecker handlers.ReadinessChecker, 
 
 	router.Get("/healthz", handlers.Healthz)
 	router.Get("/readyz", handlers.ReadyzHandler(readinessChecker))
+	router.Get("/openapi.yaml", handlers.OpenAPIHandler)
+	router.Get("/docs", handlers.SwaggerUIHandler)
 	router.Route("/notes", func(notesRouter chi.Router) {
 		notesRouter.Get("/", handlers.ListNotesHandler(noteService))
 		notesRouter.Post("/", handlers.CreateNoteHandler(noteService))

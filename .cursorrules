@@ -1,0 +1,36 @@
+# Project AI Rules
+
+## Core workflow
+
+- Read the existing repo, config, and docs before editing.
+- Prefer the smallest correct change.
+- Do not invent routes, env vars, SQL, package names, scripts, or APIs.
+- Reuse existing patterns before creating new abstractions.
+- Keep one clear responsibility per package and function.
+
+## Go rules
+
+- Wrap errors with context.
+- Use `context.Context` for request-scoped and I/O work.
+- Keep interfaces small.
+- Prefer standard library first.
+- Avoid hidden global state.
+
+## HTTP rules
+
+- Handlers manage transport concerns only.
+- Use shared response helpers for stable JSON shapes.
+- Do not leak internal errors or secrets to clients.
+
+## Comment rules
+
+- Exported symbols require Go-style comments.
+- Complex logic and non-obvious constraints require comments.
+- Do not add noise comments.
+- When changing behavior, update related comments in the same edit.
+
+## Validation rules
+
+- Run the smallest relevant validation after changes.
+- Prefer repository commands such as `make test`, `make vet`, `make build`, and `make lint`.
+- If validation is not possible, state what was not verified.

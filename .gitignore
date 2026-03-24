@@ -1,0 +1,16 @@
+# Binaries
+/server
+/bin/
+
+# Go artifacts
+/coverage.out
+/dist/
+
+# IDE and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Environment files
+.env
+.env.local

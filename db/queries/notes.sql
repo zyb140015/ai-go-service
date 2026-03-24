@@ -13,6 +13,11 @@ SELECT id, title, body, created_at, updated_at
 FROM app_notes
 ORDER BY created_at DESC, id DESC;
 
+-- name: GetNoteByID :one
+SELECT id, title, body, created_at, updated_at
+FROM app_notes
+WHERE id = $1;
+
 -- name: UpdateNote :one
 UPDATE app_notes
 SET title = $2,

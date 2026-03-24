@@ -18,6 +18,7 @@ import (
 type NoteService interface {
 	CreateNote(ctx context.Context, title string, body string) (domain.Note, error)
 	ListNotes(ctx context.Context) ([]domain.Note, error)
+	GetNote(ctx context.Context, id int64) (domain.Note, error)
 	UpdateNote(ctx context.Context, id int64, title string, body string) (domain.Note, error)
 	DeleteNote(ctx context.Context, id int64) error
 }
@@ -92,6 +93,29 @@ func ListNotesHandler(noteService NoteService) http.HandlerFunc {
 		}
 
 		response.JSON(w, http.StatusOK, NotesResponse{Items: items})
+	}
+}
+
+// GetNoteHandler returns an HTTP handler that retrieves a single note.
+func GetNoteHandler(noteService NoteService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if noteService == nil {
+			response.Error(w, http.StatusServiceUnavailable, response.CodeServiceUnavailable, "service is not ready")
+			return
+		}
+
+		noteID, ok := parseNoteID(w, r)
+		if !ok {
+			return
+		}
+
+		note, err := noteService.GetNote(r.Context(), noteID)
+		if err != nil {
+			handleNoteError(w, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, toNoteResponse(note))
 	}
 }
 

@@ -22,6 +22,7 @@ var (
 type NoteRepository interface {
 	Create(ctx context.Context, title string, body string) (domain.Note, error)
 	List(ctx context.Context) ([]domain.Note, error)
+	GetByID(ctx context.Context, id int64) (domain.Note, error)
 	Update(ctx context.Context, id int64, title string, body string) (domain.Note, error)
 	Delete(ctx context.Context, id int64) error
 }
@@ -72,6 +73,28 @@ func (service *NoteService) ListNotes(ctx context.Context) ([]domain.Note, error
 	}
 
 	return notes, nil
+}
+
+// GetNote returns one note by ID.
+func (service *NoteService) GetNote(ctx context.Context, id int64) (domain.Note, error) {
+	if service == nil || service.repository == nil {
+		return domain.Note{}, ErrUnavailable
+	}
+
+	if id <= 0 {
+		return domain.Note{}, fmt.Errorf("id must be positive: %w", ErrInvalidInput)
+	}
+
+	note, err := service.repository.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return domain.Note{}, ErrNotFound
+		}
+
+		return domain.Note{}, fmt.Errorf("get note: %w", err)
+	}
+
+	return note, nil
 }
 
 // UpdateNote validates and updates an existing note.

@@ -61,6 +61,24 @@ func (repository *NoteRepository) List(ctx context.Context) ([]domain.Note, erro
 	return notes, nil
 }
 
+// GetByID returns one note by its identifier.
+func (repository *NoteRepository) GetByID(ctx context.Context, id int64) (domain.Note, error) {
+	if repository == nil || repository.queries == nil {
+		return domain.Note{}, fmt.Errorf("note repository is unavailable")
+	}
+
+	record, err := repository.queries.GetNoteByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Note{}, domain.ErrNotFound
+		}
+
+		return domain.Note{}, fmt.Errorf("get note by id: %w", err)
+	}
+
+	return mapNote(record), nil
+}
+
 // Update changes a note and returns the updated record.
 func (repository *NoteRepository) Update(ctx context.Context, id int64, title string, body string) (domain.Note, error) {
 	if repository == nil || repository.queries == nil {

@@ -51,6 +51,25 @@ func (q *Queries) DeleteNote(ctx context.Context, id int64) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
+const getNoteByID = `-- name: GetNoteByID :one
+SELECT id, title, body, created_at, updated_at
+FROM app_notes
+WHERE id = $1
+`
+
+func (q *Queries) GetNoteByID(ctx context.Context, id int64) (AppNote, error) {
+	row := q.db.QueryRow(ctx, getNoteByID, id)
+	var i AppNote
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Body,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listNotes = `-- name: ListNotes :many
 SELECT id, title, body, created_at, updated_at
 FROM app_notes

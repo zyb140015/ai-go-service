@@ -42,6 +42,7 @@ If `DATABASE_URL` is provided, the application opens a PostgreSQL pool during st
 - `GET /healthz`
 - `GET /readyz`
 - `GET /notes/`
+- `GET /notes/{noteID}`
 - `POST /notes/`
 - `PUT /notes/{noteID}`
 - `DELETE /notes/{noteID}`
@@ -60,6 +61,12 @@ List notes:
 
 ```bash
 curl http://localhost:8080/notes/
+```
+
+Get one note:
+
+```bash
+curl http://localhost:8080/notes/1
 ```
 
 Update a note:
@@ -111,13 +118,37 @@ Set the database connection string:
 export DATABASE_URL='postgres://postgres:postgres@localhost:5432/ai_go_service?sslmode=disable'
 ```
 
-Apply the base migration:
+Install `golang-migrate` locally:
+
+```bash
+brew install golang-migrate
+```
+
+Apply all migrations:
+
+```bash
+make migrate-up
+```
+
+Rollback the latest migration:
+
+```bash
+make migrate-down
+```
+
+Create a new migration file pair:
+
+```bash
+make migrate-create name=add_note_tags
+```
+
+If you want to apply only the current base SQL manually, use:
 
 ```bash
 docker compose exec -T postgres psql -U postgres -d ai_go_service < db/migrations/000001_init.up.sql
 ```
 
-If you need to revert the base migration:
+If you need to revert the base SQL manually:
 
 ```bash
 docker compose exec -T postgres psql -U postgres -d ai_go_service < db/migrations/000001_init.down.sql

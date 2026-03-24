@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"ai-go-service/internal/auth"
 	"ai-go-service/internal/config"
 	httpserver "ai-go-service/internal/http"
 	"ai-go-service/internal/observability"
@@ -40,10 +41,21 @@ func New(ctx context.Context) (*App, error) {
 
 	noteRepository := postgres.NewNoteRepository(db)
 	noteService := service.NewNoteService(noteRepository)
+	userRepository := postgres.NewUserRepository(db)
+
+	var authService *service.AuthService
+	if userRepository != nil && appConfig.AuthTokenSecret != "" {
+		tokenManager, err := auth.NewTokenManager(appConfig.AuthTokenSecret, nil)
+		if err != nil {
+			return nil, fmt.Errorf("create token manager: %w", err)
+		}
+
+		authService = service.NewAuthService(userRepository, tokenManager, appConfig.AuthTokenTTL)
+	}
 
 	server := &http.Server{
 		Addr:              appConfig.HTTPAddr,
-		Handler:           httpserver.NewRouter(logger, db, noteService),
+		Handler:           httpserver.NewRouter(logger, db, noteService, authService),
 		ReadTimeout:       appConfig.ReadTimeout,
 		ReadHeaderTimeout: appConfig.ReadHeaderTimeout,
 		WriteTimeout:      appConfig.WriteTimeout,

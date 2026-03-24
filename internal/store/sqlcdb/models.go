@@ -15,3 +15,12 @@ type AppNote struct {
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
 }
+
+type AppUser struct {
+	ID           int64
+	Email        string
+	DisplayName  string
+	PasswordHash string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}

@@ -16,7 +16,7 @@ import (
 const requestTimeout = 15 * time.Second
 
 // NewRouter builds the HTTP router and registers all public endpoints.
-func NewRouter(logger *slog.Logger, readinessChecker handlers.ReadinessChecker, noteService handlers.NoteService) http.Handler {
+func NewRouter(logger *slog.Logger, readinessChecker handlers.ReadinessChecker, noteService handlers.NoteService, authService handlers.AuthService) http.Handler {
 	router := chi.NewRouter()
 
 	router.Use(chimiddleware.RequestID)
@@ -29,6 +29,11 @@ func NewRouter(logger *slog.Logger, readinessChecker handlers.ReadinessChecker, 
 	router.Get("/readyz", handlers.ReadyzHandler(readinessChecker))
 	router.Get("/openapi.yaml", handlers.OpenAPIHandler)
 	router.Get("/docs", handlers.SwaggerUIHandler)
+	router.Route("/auth", func(authRouter chi.Router) {
+		authRouter.Post("/register", handlers.RegisterHandler(authService))
+		authRouter.Post("/login", handlers.LoginHandler(authService))
+		authRouter.Get("/me", handlers.CurrentUserHandler(authService))
+	})
 	router.Route("/notes", func(notesRouter chi.Router) {
 		notesRouter.Get("/", handlers.ListNotesHandler(noteService))
 		notesRouter.Post("/", handlers.CreateNoteHandler(noteService))

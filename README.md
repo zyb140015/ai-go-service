@@ -41,11 +41,39 @@ If `DATABASE_URL` is provided, the application opens a PostgreSQL pool during st
 
 - `GET /healthz`
 - `GET /readyz`
+- `POST /auth/register`
+- `POST /auth/login`
+- `GET /auth/me`
 - `GET /notes/`
 - `GET /notes/{noteID}`
 - `POST /notes/`
 - `PUT /notes/{noteID}`
 - `DELETE /notes/{noteID}`
+
+### Auth API examples
+
+Register a user:
+
+```bash
+curl -X POST http://localhost:8080/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"user@example.com","displayName":"Demo User","password":"password123"}'
+```
+
+Log in:
+
+```bash
+curl -X POST http://localhost:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"user@example.com","password":"password123"}'
+```
+
+Read the current user:
+
+```bash
+curl http://localhost:8080/auth/me \
+  -H 'Authorization: Bearer <token>'
+```
 
 ### Notes API examples
 
@@ -110,6 +138,8 @@ All configuration is loaded from environment variables.
 - `HTTP_SHUTDOWN_TIMEOUT` default: `10s`
 - `LOG_LEVEL` default: `INFO`
 - `DATABASE_URL` default: empty, which disables the PostgreSQL dependency
+- `AUTH_TOKEN_SECRET` default: empty, which disables auth handlers backed by real tokens
+- `AUTH_TOKEN_TTL` default: `24h`
 
 Duration values accept standard Go duration strings such as `5s` and `1m`.
 

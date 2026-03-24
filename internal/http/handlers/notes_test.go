@@ -57,7 +57,7 @@ func TestCreateNoteReturnsCreatedNote(t *testing.T) {
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	})
+	}, nil)
 
 	request := httptest.NewRequest(http.MethodPost, "/notes/", strings.NewReader(`{"title":"hello","body":"world"}`))
 	request.Header.Set("Content-Type", "application/json")
@@ -92,7 +92,7 @@ func TestCreateNoteRejectsInvalidRequest(t *testing.T) {
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	})
+	}, nil)
 
 	request := httptest.NewRequest(http.MethodPost, "/notes/", strings.NewReader(`{"title":"","body":"world"}`))
 	recorder := httptest.NewRecorder()
@@ -126,7 +126,7 @@ func TestListNotesReturnsItems(t *testing.T) {
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	})
+	}, nil)
 
 	request := httptest.NewRequest(http.MethodGet, "/notes/?page=2&pageSize=5&q=hel&sort=title&order=asc", nil)
 	recorder := httptest.NewRecorder()
@@ -181,7 +181,7 @@ func TestListNotesRejectsInvalidPage(t *testing.T) {
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	})
+	}, nil)
 
 	request := httptest.NewRequest(http.MethodGet, "/notes/?page=0", nil)
 	recorder := httptest.NewRecorder()
@@ -196,7 +196,7 @@ func TestListNotesRejectsInvalidPage(t *testing.T) {
 func TestDocsRoutesReturnContent(t *testing.T) {
 	t.Parallel()
 
-	router := httpserver.NewRouter(newTestLogger(), nil, nil)
+	router := httpserver.NewRouter(newTestLogger(), nil, nil, nil)
 
 	openAPIRequest := httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil)
 	openAPIRecorder := httptest.NewRecorder()
@@ -226,7 +226,7 @@ func TestListNotesReturnsServiceUnavailable(t *testing.T) {
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	})
+	}, nil)
 
 	request := httptest.NewRequest(http.MethodGet, "/notes/", nil)
 	recorder := httptest.NewRecorder()
@@ -251,7 +251,7 @@ func TestCreateNoteReturnsInternalErrorOnUnexpectedFailure(t *testing.T) {
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	})
+	}, nil)
 
 	request := httptest.NewRequest(http.MethodPost, "/notes/", strings.NewReader(`{"title":"hello","body":"world"}`))
 	recorder := httptest.NewRecorder()
@@ -277,7 +277,7 @@ func TestUpdateNoteReturnsUpdatedNote(t *testing.T) {
 			return domain.Note{ID: id, Title: title, Body: body, CreatedAt: updatedAt, UpdatedAt: updatedAt}, nil
 		},
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	})
+	}, nil)
 
 	request := httptest.NewRequest(http.MethodPut, "/notes/1", strings.NewReader(`{"title":"updated","body":"body"}`))
 	recorder := httptest.NewRecorder()
@@ -300,7 +300,7 @@ func TestUpdateNoteRejectsInvalidID(t *testing.T) {
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	})
+	}, nil)
 
 	request := httptest.NewRequest(http.MethodPut, "/notes/abc", strings.NewReader(`{"title":"updated","body":"body"}`))
 	recorder := httptest.NewRecorder()
@@ -323,7 +323,7 @@ func TestDeleteNoteReturnsNoContent(t *testing.T) {
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	})
+	}, nil)
 
 	request := httptest.NewRequest(http.MethodDelete, "/notes/1", nil)
 	recorder := httptest.NewRecorder()
@@ -346,7 +346,7 @@ func TestDeleteNoteReturnsNotFound(t *testing.T) {
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return service.ErrNotFound },
-	})
+	}, nil)
 
 	request := httptest.NewRequest(http.MethodDelete, "/notes/99", nil)
 	recorder := httptest.NewRecorder()
@@ -372,7 +372,7 @@ func TestGetNoteReturnsItem(t *testing.T) {
 		},
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	})
+	}, nil)
 
 	request := httptest.NewRequest(http.MethodGet, "/notes/1", nil)
 	recorder := httptest.NewRecorder()
@@ -395,7 +395,7 @@ func TestGetNoteReturnsNotFound(t *testing.T) {
 		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, service.ErrNotFound },
 		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
 		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	})
+	}, nil)
 
 	request := httptest.NewRequest(http.MethodGet, "/notes/99", nil)
 	recorder := httptest.NewRecorder()

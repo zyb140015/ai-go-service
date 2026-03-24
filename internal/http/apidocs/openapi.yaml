@@ -1,27 +1,120 @@
 openapi: 3.1.0
 info:
   title: ai-go-service API
-  version: 0.1.0
-  description: Minimal Go HTTP API service with notes CRUD, filtering, sorting, and pagination.
+  version: 0.2.0
+  description: Minimal Go HTTP API service with notes CRUD, pagination, filtering, and auth foundations.
 servers:
   - url: http://localhost:8080
+tags:
+  - name: Health
+  - name: Docs
+  - name: Auth
+  - name: Notes
 paths:
   /healthz:
     get:
+      tags: [Health]
       summary: Liveness probe
       responses:
         '200':
           description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
   /readyz:
     get:
+      tags: [Health]
       summary: Readiness probe
       responses:
         '200':
           description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
         '503':
-          description: Service dependency is unavailable
+          $ref: '#/components/responses/ServiceUnavailable'
+  /openapi.yaml:
+    get:
+      tags: [Docs]
+      summary: OpenAPI specification
+      responses:
+        '200':
+          description: YAML spec
+  /docs:
+    get:
+      tags: [Docs]
+      summary: Swagger UI
+      responses:
+        '200':
+          description: HTML documentation page
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a user account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authentication succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Return the current authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /notes/:
     get:
+      tags: [Notes]
       summary: List notes
       parameters:
         - in: query
@@ -29,12 +122,14 @@ paths:
           schema:
             type: integer
             minimum: 1
+            default: 1
         - in: query
           name: pageSize
           schema:
             type: integer
             minimum: 1
             maximum: 100
+            default: 20
         - in: query
           name: q
           schema:
@@ -44,15 +139,26 @@ paths:
           schema:
             type: string
             enum: [created_at, title]
+            default: created_at
         - in: query
           name: order
           schema:
             type: string
             enum: [asc, desc]
+            default: desc
       responses:
         '200':
           description: Notes page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotesResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
     post:
+      tags: [Notes]
       summary: Create note
       requestBody:
         required: true
@@ -63,17 +169,35 @@ paths:
       responses:
         '201':
           description: Note created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /notes/{noteID}:
     get:
+      tags: [Notes]
       summary: Get note by id
       parameters:
         - $ref: '#/components/parameters/NoteID'
       responses:
         '200':
           description: Note found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
         '404':
-          description: Note not found
+          $ref: '#/components/responses/NoteNotFound'
     put:
+      tags: [Notes]
       summary: Update note
       parameters:
         - $ref: '#/components/parameters/NoteID'
@@ -86,14 +210,32 @@ paths:
       responses:
         '200':
           description: Note updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/NoteNotFound'
     delete:
+      tags: [Notes]
       summary: Delete note
       parameters:
         - $ref: '#/components/parameters/NoteID'
       responses:
         '204':
           description: Note deleted
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/NoteNotFound'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
   parameters:
     NoteID:
       in: path
@@ -102,7 +244,100 @@ components:
       schema:
         type: integer
         minimum: 1
+  responses:
+    InvalidRequest:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_request:
+              value:
+                error:
+                  code: invalid_request
+                  message: page must be a positive integer
+    Unauthorized:
+      description: Authentication failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unauthorized:
+              value:
+                error:
+                  code: unauthorized
+                  message: authentication failed
+    Conflict:
+      description: Resource conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            conflict:
+              value:
+                error:
+                  code: conflict
+                  message: resource already exists
+    ServiceUnavailable:
+      description: Dependency is not configured or currently unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            service_unavailable:
+              value:
+                error:
+                  code: service_unavailable
+                  message: service is not ready
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            internal_error:
+              value:
+                error:
+                  code: internal_error
+                  message: internal server error
+    NoteNotFound:
+      description: Note does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            not_found:
+              value:
+                error:
+                  code: not_found
+                  message: note not found
   schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+    ErrorDetail:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
     NoteWriteRequest:
       type: object
       required: [title, body]
@@ -110,4 +345,94 @@ components:
         title:
           type: string
         body:
+          type: string
+    Note:
+      type: object
+      required: [id, title, body, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    NotesResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Note'
+        meta:
+          $ref: '#/components/schemas/NotesMeta'
+    NotesMeta:
+      type: object
+      required: [page, pageSize, total, sort, order]
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        sort:
+          type: string
+        order:
+          type: string
+        q:
+          type: string
+    RegisterRequest:
+      type: object
+      required: [email, displayName, password]
+      properties:
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        password:
+          type: string
+          format: password
+          minLength: 8
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+    AuthUser:
+      type: object
+      required: [id, email, displayName, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AuthResponse:
+      type: object
+      required: [user, token]
+      properties:
+        user:
+          $ref: '#/components/schemas/AuthUser'
+        token:
           type: string

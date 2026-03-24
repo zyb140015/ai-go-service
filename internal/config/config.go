@@ -16,6 +16,7 @@ const (
 	defaultIdleTimeout       = 30 * time.Second
 	defaultShutdownTimeout   = 10 * time.Second
 	defaultLogLevel          = "INFO"
+	defaultAuthTokenTTL      = 24 * time.Hour
 )
 
 // Config stores application configuration loaded from the environment.
@@ -28,6 +29,8 @@ type Config struct {
 	ShutdownTimeout   time.Duration
 	LogLevel          string
 	DatabaseURL       string
+	AuthTokenSecret   string
+	AuthTokenTTL      time.Duration
 }
 
 // Load returns the application configuration using environment overrides when present.
@@ -41,6 +44,8 @@ func Load() (Config, error) {
 		ShutdownTimeout:   getDuration("HTTP_SHUTDOWN_TIMEOUT", defaultShutdownTimeout),
 		LogLevel:          strings.ToUpper(getString("LOG_LEVEL", defaultLogLevel)),
 		DatabaseURL:       getString("DATABASE_URL", ""),
+		AuthTokenSecret:   getString("AUTH_TOKEN_SECRET", ""),
+		AuthTokenTTL:      getDuration("AUTH_TOKEN_TTL", defaultAuthTokenTTL),
 	}
 
 	if config.HTTPAddr == "" {
@@ -65,6 +70,10 @@ func Load() (Config, error) {
 
 	if config.ShutdownTimeout <= 0 {
 		return Config{}, fmt.Errorf("HTTP_SHUTDOWN_TIMEOUT must be positive")
+	}
+
+	if config.AuthTokenTTL <= 0 {
+		return Config{}, fmt.Errorf("AUTH_TOKEN_TTL must be positive")
 	}
 
 	return config, nil

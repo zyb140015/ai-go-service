@@ -16,7 +16,7 @@ import (
 const requestTimeout = 15 * time.Second
 
 // NewRouter builds the HTTP router and registers all public endpoints.
-func NewRouter(logger *slog.Logger, readinessChecker handlers.ReadinessChecker) http.Handler {
+func NewRouter(logger *slog.Logger, readinessChecker handlers.ReadinessChecker, noteService handlers.NoteService) http.Handler {
 	router := chi.NewRouter()
 
 	router.Use(chimiddleware.RequestID)
@@ -27,6 +27,10 @@ func NewRouter(logger *slog.Logger, readinessChecker handlers.ReadinessChecker) 
 
 	router.Get("/healthz", handlers.Healthz)
 	router.Get("/readyz", handlers.ReadyzHandler(readinessChecker))
+	router.Route("/notes", func(notesRouter chi.Router) {
+		notesRouter.Get("/", handlers.ListNotesHandler(noteService))
+		notesRouter.Post("/", handlers.CreateNoteHandler(noteService))
+	})
 
 	router.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 		response.Error(w, http.StatusNotFound, response.CodeNotFound, "resource not found")

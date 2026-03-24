@@ -1,0 +1,71 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"ai-go-service/internal/domain"
+)
+
+var (
+	// ErrUnavailable indicates a required dependency is not configured.
+	ErrUnavailable = errors.New("service unavailable")
+	// ErrInvalidInput indicates request data failed validation.
+	ErrInvalidInput = errors.New("invalid input")
+)
+
+// NoteRepository defines the persistence behavior required by NoteService.
+type NoteRepository interface {
+	Create(ctx context.Context, title string, body string) (domain.Note, error)
+	List(ctx context.Context) ([]domain.Note, error)
+}
+
+// NoteService validates note inputs and delegates persistence to a repository.
+type NoteService struct {
+	repository NoteRepository
+}
+
+// NewNoteService creates a note service with the provided repository.
+func NewNoteService(repository NoteRepository) *NoteService {
+	return &NoteService{repository: repository}
+}
+
+// CreateNote validates and creates a new note.
+func (service *NoteService) CreateNote(ctx context.Context, title string, body string) (domain.Note, error) {
+	if service == nil || service.repository == nil {
+		return domain.Note{}, ErrUnavailable
+	}
+
+	trimmedTitle := strings.TrimSpace(title)
+	trimmedBody := strings.TrimSpace(body)
+	if trimmedTitle == "" {
+		return domain.Note{}, fmt.Errorf("title is required: %w", ErrInvalidInput)
+	}
+
+	if trimmedBody == "" {
+		return domain.Note{}, fmt.Errorf("body is required: %w", ErrInvalidInput)
+	}
+
+	note, err := service.repository.Create(ctx, trimmedTitle, trimmedBody)
+	if err != nil {
+		return domain.Note{}, fmt.Errorf("create note: %w", err)
+	}
+
+	return note, nil
+}
+
+// ListNotes returns all available notes ordered by the repository.
+func (service *NoteService) ListNotes(ctx context.Context) ([]domain.Note, error) {
+	if service == nil || service.repository == nil {
+		return nil, ErrUnavailable
+	}
+
+	notes, err := service.repository.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list notes: %w", err)
+	}
+
+	return notes, nil
+}

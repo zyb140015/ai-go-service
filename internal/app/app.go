@@ -9,6 +9,7 @@ import (
 	"ai-go-service/internal/config"
 	httpserver "ai-go-service/internal/http"
 	"ai-go-service/internal/observability"
+	"ai-go-service/internal/service"
 	"ai-go-service/internal/store/postgres"
 )
 
@@ -37,9 +38,12 @@ func New(ctx context.Context) (*App, error) {
 		return nil, fmt.Errorf("create postgres pool: %w", err)
 	}
 
+	noteRepository := postgres.NewNoteRepository(db)
+	noteService := service.NewNoteService(noteRepository)
+
 	server := &http.Server{
 		Addr:              appConfig.HTTPAddr,
-		Handler:           httpserver.NewRouter(logger, db),
+		Handler:           httpserver.NewRouter(logger, db, noteService),
 		ReadTimeout:       appConfig.ReadTimeout,
 		ReadHeaderTimeout: appConfig.ReadHeaderTimeout,
 		WriteTimeout:      appConfig.WriteTimeout,

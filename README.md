@@ -41,6 +41,24 @@ If `DATABASE_URL` is provided, the application opens a PostgreSQL pool during st
 
 - `GET /healthz`
 - `GET /readyz`
+- `GET /notes/`
+- `POST /notes/`
+
+### Notes API examples
+
+Create a note:
+
+```bash
+curl -X POST http://localhost:8080/notes/ \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"hello","body":"world"}'
+```
+
+List notes:
+
+```bash
+curl http://localhost:8080/notes/
+```
 
 ## Configuration
 

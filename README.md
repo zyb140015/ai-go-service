@@ -24,6 +24,7 @@ It favors a small dependency surface, explicit boundaries, strong comments, and 
 - `internal/store`: persistence boundary for repositories and PostgreSQL adapters
 - `db/migrations`: SQL migrations
 - `db/queries`: SQL files managed by `sqlc`
+- `internal/store/sqlcdb`: generated query code produced by `sqlc`
 - `docs`: project and AI operation documents
 
 ## Getting started
@@ -55,6 +56,12 @@ All configuration is loaded from environment variables.
 - `DATABASE_URL` default: empty, which disables the PostgreSQL dependency
 
 Duration values accept standard Go duration strings such as `5s` and `1m`.
+
+## Database scaffold
+
+- `db/migrations/000001_init.up.sql` creates the sample `app_notes` table.
+- `db/queries/notes.sql` contains concrete `CreateNote` and `ListNotes` queries.
+- `internal/store/postgres/note_repository.go` shows how to wrap generated `sqlc` code behind a repository boundary.
 
 ## Development commands
 

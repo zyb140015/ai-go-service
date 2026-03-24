@@ -1,2 +1,2 @@
--- 000001_init.down.sql reverts the placeholder base migration.
-SELECT 1;
+DROP INDEX IF EXISTS idx_app_notes_created_at;
+DROP TABLE IF EXISTS app_notes;

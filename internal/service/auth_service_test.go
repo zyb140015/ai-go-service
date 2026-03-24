@@ -14,6 +14,7 @@ type userRepositoryStub struct {
 	createFn func(ctx context.Context, email string, displayName string, passwordHash string) (domain.User, error)
 	byEmail  func(ctx context.Context, email string) (domain.User, error)
 	byID     func(ctx context.Context, id int64) (domain.User, error)
+	updateFn func(ctx context.Context, id int64, passwordHash string) (domain.User, error)
 }
 
 func (stub userRepositoryStub) Create(ctx context.Context, email string, displayName string, passwordHash string) (domain.User, error) {
@@ -26,6 +27,10 @@ func (stub userRepositoryStub) GetByEmail(ctx context.Context, email string) (do
 
 func (stub userRepositoryStub) GetByID(ctx context.Context, id int64) (domain.User, error) {
 	return stub.byID(ctx, id)
+}
+
+func (stub userRepositoryStub) UpdatePassword(ctx context.Context, id int64, passwordHash string) (domain.User, error) {
+	return stub.updateFn(ctx, id, passwordHash)
 }
 
 type tokenIssuerStub struct {
@@ -57,8 +62,9 @@ func TestAuthServiceRegisterNormalizesInput(t *testing.T) {
 			}
 			return domain.User{ID: 1, Email: email, DisplayName: displayName}, nil
 		},
-		byEmail: func(_ context.Context, _ string) (domain.User, error) { return domain.User{}, nil },
-		byID:    func(_ context.Context, _ int64) (domain.User, error) { return domain.User{}, nil },
+		byEmail:  func(_ context.Context, _ string) (domain.User, error) { return domain.User{}, nil },
+		byID:     func(_ context.Context, _ int64) (domain.User, error) { return domain.User{}, nil },
+		updateFn: func(_ context.Context, _ int64, _ string) (domain.User, error) { return domain.User{}, nil },
 	}, tokenIssuerStub{
 		signFn: func(_ context.Context, userID int64, email string, ttl time.Duration) (string, error) {
 			if userID != 1 || email != "user@example.com" || ttl <= 0 {
@@ -76,8 +82,12 @@ func TestAuthServiceRegisterNormalizesInput(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 
-	if result.Token != "signed-token" {
-		t.Fatalf("expected token, got %q", result.Token)
+	if result.AccessToken != "signed-token" {
+		t.Fatalf("expected access token, got %q", result.AccessToken)
+	}
+
+	if result.RefreshToken == "" {
+		t.Fatal("expected refresh token")
 	}
 }
 
@@ -89,7 +99,8 @@ func TestAuthServiceLoginRejectsBadPassword(t *testing.T) {
 		byEmail: func(_ context.Context, _ string) (domain.User, error) {
 			return domain.User{ID: 1, Email: "user@example.com", PasswordHash: "$2a$12$7A2yOmKB5tQ3fQxQv8W/L.0z5Y4xXHzkwmo7aX6ixkmKuuNHYsYAG"}, nil
 		},
-		byID: func(_ context.Context, _ int64) (domain.User, error) { return domain.User{}, nil },
+		byID:     func(_ context.Context, _ int64) (domain.User, error) { return domain.User{}, nil },
+		updateFn: func(_ context.Context, _ int64, _ string) (domain.User, error) { return domain.User{}, nil },
 	}, tokenIssuerStub{
 		signFn: func(_ context.Context, _ int64, _ string, _ time.Duration) (string, error) { return "", nil },
 		verifyFn: func(_ context.Context, _ string) (domain.AuthClaims, error) {
@@ -112,6 +123,7 @@ func TestAuthServiceGetUserByTokenResolvesUser(t *testing.T) {
 		byID: func(_ context.Context, id int64) (domain.User, error) {
 			return domain.User{ID: id, Email: "user@example.com", DisplayName: "Demo User"}, nil
 		},
+		updateFn: func(_ context.Context, _ int64, _ string) (domain.User, error) { return domain.User{}, nil },
 	}, tokenIssuerStub{
 		signFn: func(_ context.Context, _ int64, _ string, _ time.Duration) (string, error) { return "", nil },
 		verifyFn: func(_ context.Context, token string) (domain.AuthClaims, error) {
@@ -129,5 +141,60 @@ func TestAuthServiceGetUserByTokenResolvesUser(t *testing.T) {
 
 	if user.ID != 42 {
 		t.Fatalf("expected user id 42, got %d", user.ID)
+	}
+}
+
+func TestAuthServiceRefreshReturnsTokenPair(t *testing.T) {
+	t.Parallel()
+
+	authService := service.NewAuthService(userRepositoryStub{
+		createFn: func(_ context.Context, _ string, _ string, _ string) (domain.User, error) { return domain.User{}, nil },
+		byEmail:  func(_ context.Context, _ string) (domain.User, error) { return domain.User{}, nil },
+		byID: func(_ context.Context, id int64) (domain.User, error) {
+			return domain.User{ID: id, Email: "user@example.com", DisplayName: "Demo User"}, nil
+		},
+		updateFn: func(_ context.Context, _ int64, _ string) (domain.User, error) { return domain.User{}, nil },
+	}, tokenIssuerStub{
+		signFn: func(_ context.Context, userID int64, email string, ttl time.Duration) (string, error) {
+			return email + ttl.String(), nil
+		},
+		verifyFn: func(_ context.Context, token string) (domain.AuthClaims, error) {
+			if token != "refresh-token" {
+				t.Fatalf("unexpected token %q", token)
+			}
+			return domain.AuthClaims{UserID: 7, Email: "user@example.com", Expiry: time.Now().Add(time.Hour)}, nil
+		},
+	}, time.Hour)
+
+	result, err := authService.Refresh(context.Background(), "refresh-token")
+	if err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+
+	if result.AccessToken == "" || result.RefreshToken == "" {
+		t.Fatal("expected refreshed token pair")
+	}
+}
+
+func TestAuthServiceChangePasswordReturnsUnauthorizedOnWrongPassword(t *testing.T) {
+	t.Parallel()
+
+	authService := service.NewAuthService(userRepositoryStub{
+		createFn: func(_ context.Context, _ string, _ string, _ string) (domain.User, error) { return domain.User{}, nil },
+		byEmail:  func(_ context.Context, _ string) (domain.User, error) { return domain.User{}, nil },
+		byID: func(_ context.Context, id int64) (domain.User, error) {
+			return domain.User{ID: id, Email: "user@example.com", PasswordHash: "$2a$12$7A2yOmKB5tQ3fQxQv8W/L.0z5Y4xXHzkwmo7aX6ixkmKuuNHYsYAG"}, nil
+		},
+		updateFn: func(_ context.Context, _ int64, _ string) (domain.User, error) { return domain.User{}, nil },
+	}, tokenIssuerStub{
+		signFn: func(_ context.Context, _ int64, _ string, _ time.Duration) (string, error) { return "token", nil },
+		verifyFn: func(_ context.Context, _ string) (domain.AuthClaims, error) {
+			return domain.AuthClaims{UserID: 1, Email: "user@example.com", Expiry: time.Now().Add(time.Hour)}, nil
+		},
+	}, time.Hour)
+
+	_, err := authService.ChangePassword(context.Background(), "access-token", "wrong-password", "newpass123")
+	if !errors.Is(err, service.ErrUnauthorized) {
+		t.Fatalf("expected unauthorized, got %v", err)
 	}
 }

@@ -13,6 +13,7 @@ tags:
 paths:
   /healthz:
     get:
+      security: []
       tags: [Health]
       summary: Liveness probe
       responses:
@@ -24,6 +25,7 @@ paths:
                 $ref: '#/components/schemas/HealthResponse'
   /readyz:
     get:
+      security: []
       tags: [Health]
       summary: Readiness probe
       responses:
@@ -37,6 +39,7 @@ paths:
           $ref: '#/components/responses/ServiceUnavailable'
   /openapi.yaml:
     get:
+      security: []
       tags: [Docs]
       summary: OpenAPI specification
       responses:
@@ -44,6 +47,7 @@ paths:
           description: YAML spec
   /docs:
     get:
+      security: []
       tags: [Docs]
       summary: Swagger UI
       responses:
@@ -51,6 +55,7 @@ paths:
           description: HTML documentation page
   /auth/register:
     post:
+      security: []
       tags: [Auth]
       summary: Register a user account
       requestBody:
@@ -74,6 +79,7 @@ paths:
           $ref: '#/components/responses/ServiceUnavailable'
   /auth/login:
     post:
+      security: []
       tags: [Auth]
       summary: Log in with email and password
       requestBody:
@@ -95,6 +101,62 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /auth/refresh:
+    post:
+      security: []
+      tags: [Auth]
+      summary: Exchange a refresh token for a new token pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Token pair refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Log out the current bearer token on the client side
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Logout acknowledged
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change the current user's password and issue a new token pair
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /auth/me:
     get:
       tags: [Auth]
@@ -112,8 +174,10 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
-  /notes/:
+  /notes:
     get:
+      security:
+        - bearerAuth: []
       tags: [Notes]
       summary: List notes
       parameters:
@@ -158,6 +222,8 @@ paths:
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
     post:
+      security:
+        - bearerAuth: []
       tags: [Notes]
       summary: Create note
       requestBody:
@@ -181,6 +247,8 @@ paths:
           $ref: '#/components/responses/ServiceUnavailable'
   /notes/{noteID}:
     get:
+      security:
+        - bearerAuth: []
       tags: [Notes]
       summary: Get note by id
       parameters:
@@ -197,6 +265,8 @@ paths:
         '404':
           $ref: '#/components/responses/NoteNotFound'
     put:
+      security:
+        - bearerAuth: []
       tags: [Notes]
       summary: Update note
       parameters:
@@ -219,6 +289,8 @@ paths:
         '404':
           $ref: '#/components/responses/NoteNotFound'
     delete:
+      security:
+        - bearerAuth: []
       tags: [Notes]
       summary: Delete note
       parameters:
@@ -411,6 +483,23 @@ components:
         password:
           type: string
           format: password
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          format: password
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
     AuthUser:
       type: object
       required: [id, email, displayName, createdAt, updatedAt]

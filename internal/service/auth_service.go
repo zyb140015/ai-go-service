@@ -25,6 +25,7 @@ type UserRepository interface {
 	Create(ctx context.Context, email string, displayName string, passwordHash string) (domain.User, error)
 	GetByEmail(ctx context.Context, email string) (domain.User, error)
 	GetByID(ctx context.Context, id int64) (domain.User, error)
+	UpdatePassword(ctx context.Context, id int64, passwordHash string) (domain.User, error)
 }
 
 // TokenIssuer signs and verifies user auth tokens.
@@ -35,8 +36,9 @@ type TokenIssuer interface {
 
 // AuthResult groups the authenticated user and its bearer token.
 type AuthResult struct {
-	User  domain.User
-	Token string
+	User         domain.User
+	AccessToken  string
+	RefreshToken string
 }
 
 // AuthService provides registration, login, and token-backed user lookup.
@@ -76,12 +78,12 @@ func (service *AuthService) Register(ctx context.Context, email string, displayN
 		return AuthResult{}, fmt.Errorf("create user: %w", err)
 	}
 
-	token, err := service.tokens.Sign(ctx, user.ID, user.Email, service.tokenTTL)
+	accessToken, refreshToken, err := service.issueTokenPair(ctx, user)
 	if err != nil {
-		return AuthResult{}, fmt.Errorf("sign token: %w", err)
+		return AuthResult{}, err
 	}
 
-	return AuthResult{User: user, Token: token}, nil
+	return AuthResult{User: user, AccessToken: accessToken, RefreshToken: refreshToken}, nil
 }
 
 // Login verifies credentials and returns a signed token.
@@ -109,12 +111,109 @@ func (service *AuthService) Login(ctx context.Context, email string, password st
 		return AuthResult{}, ErrUnauthorized
 	}
 
-	token, err := service.tokens.Sign(ctx, user.ID, user.Email, service.tokenTTL)
+	accessToken, refreshToken, err := service.issueTokenPair(ctx, user)
 	if err != nil {
-		return AuthResult{}, fmt.Errorf("sign token: %w", err)
+		return AuthResult{}, err
 	}
 
-	return AuthResult{User: user, Token: token}, nil
+	return AuthResult{User: user, AccessToken: accessToken, RefreshToken: refreshToken}, nil
+}
+
+// Refresh exchanges a refresh token for a fresh token pair.
+func (service *AuthService) Refresh(ctx context.Context, refreshToken string) (AuthResult, error) {
+	if service == nil || service.users == nil || service.tokens == nil {
+		return AuthResult{}, ErrUnavailable
+	}
+
+	claims, err := service.tokens.Verify(ctx, strings.TrimSpace(refreshToken))
+	if err != nil {
+		return AuthResult{}, ErrUnauthorized
+	}
+
+	user, err := service.users.GetByID(ctx, claims.UserID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return AuthResult{}, ErrUnauthorized
+		}
+
+		return AuthResult{}, fmt.Errorf("get user for refresh: %w", err)
+	}
+
+	accessToken, nextRefreshToken, err := service.issueTokenPair(ctx, user)
+	if err != nil {
+		return AuthResult{}, err
+	}
+
+	return AuthResult{User: user, AccessToken: accessToken, RefreshToken: nextRefreshToken}, nil
+}
+
+// Logout verifies the bearer token so callers can invalidate local credentials safely.
+func (service *AuthService) Logout(ctx context.Context, token string) error {
+	if service == nil || service.tokens == nil {
+		return ErrUnavailable
+	}
+
+	if _, err := service.tokens.Verify(ctx, strings.TrimSpace(token)); err != nil {
+		return ErrUnauthorized
+	}
+
+	return nil
+}
+
+// ChangePassword verifies the current password, updates the stored hash, and issues fresh tokens.
+func (service *AuthService) ChangePassword(ctx context.Context, token string, currentPassword string, newPassword string) (AuthResult, error) {
+	if service == nil || service.users == nil || service.tokens == nil {
+		return AuthResult{}, ErrUnavailable
+	}
+
+	claims, err := service.tokens.Verify(ctx, strings.TrimSpace(token))
+	if err != nil {
+		return AuthResult{}, ErrUnauthorized
+	}
+
+	trimmedCurrentPassword := strings.TrimSpace(currentPassword)
+	trimmedNewPassword := strings.TrimSpace(newPassword)
+	if trimmedCurrentPassword == "" || trimmedNewPassword == "" {
+		return AuthResult{}, fmt.Errorf("currentPassword and newPassword are required: %w", ErrInvalidInput)
+	}
+
+	if len(trimmedNewPassword) < 8 {
+		return AuthResult{}, fmt.Errorf("newPassword must be at least 8 characters: %w", ErrInvalidInput)
+	}
+
+	user, err := service.users.GetByID(ctx, claims.UserID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return AuthResult{}, ErrUnauthorized
+		}
+
+		return AuthResult{}, fmt.Errorf("get user for password change: %w", err)
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(trimmedCurrentPassword)); err != nil {
+		return AuthResult{}, ErrUnauthorized
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(trimmedNewPassword), bcryptCost)
+	if err != nil {
+		return AuthResult{}, fmt.Errorf("hash new password: %w", err)
+	}
+
+	updatedUser, err := service.users.UpdatePassword(ctx, user.ID, string(passwordHash))
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return AuthResult{}, ErrUnauthorized
+		}
+
+		return AuthResult{}, fmt.Errorf("update password: %w", err)
+	}
+
+	accessToken, refreshToken, err := service.issueTokenPair(ctx, updatedUser)
+	if err != nil {
+		return AuthResult{}, err
+	}
+
+	return AuthResult{User: updatedUser, AccessToken: accessToken, RefreshToken: refreshToken}, nil
 }
 
 // GetUserByToken resolves the current user from a bearer token.
@@ -166,4 +265,18 @@ func normalizeCredentials(email string, displayName string, password string) (st
 	}
 
 	return normalizedEmail, normalizedName, normalizedPassword, nil
+}
+
+func (service *AuthService) issueTokenPair(ctx context.Context, user domain.User) (string, string, error) {
+	accessToken, err := service.tokens.Sign(ctx, user.ID, user.Email, service.tokenTTL)
+	if err != nil {
+		return "", "", fmt.Errorf("sign access token: %w", err)
+	}
+
+	refreshToken, err := service.tokens.Sign(ctx, user.ID, user.Email, service.tokenTTL*7)
+	if err != nil {
+		return "", "", fmt.Errorf("sign refresh token: %w", err)
+	}
+
+	return accessToken, refreshToken, nil
 }

@@ -81,3 +81,30 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (AppUser, error) {
 	)
 	return i, err
 }
+
+const updateUserPassword = `-- name: UpdateUserPassword :one
+UPDATE app_users
+SET password_hash = $2,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, email, display_name, password_hash, created_at, updated_at
+`
+
+type UpdateUserPasswordParams struct {
+	ID           int64
+	PasswordHash string
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (AppUser, error) {
+	row := q.db.QueryRow(ctx, updateUserPassword, arg.ID, arg.PasswordHash)
+	var i AppUser
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.DisplayName,
+		&i.PasswordHash,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

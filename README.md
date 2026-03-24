@@ -43,6 +43,9 @@ If `DATABASE_URL` is provided, the application opens a PostgreSQL pool during st
 - `GET /readyz`
 - `POST /auth/register`
 - `POST /auth/login`
+- `POST /auth/refresh`
+- `POST /auth/logout`
+- `POST /auth/change-password`
 - `GET /auth/me`
 - `GET /notes/`
 - `GET /notes/{noteID}`
@@ -68,6 +71,30 @@ curl -X POST http://localhost:8080/auth/login \
   -d '{"email":"user@example.com","password":"password123"}'
 ```
 
+Refresh tokens:
+
+```bash
+curl -X POST http://localhost:8080/auth/refresh \
+  -H 'Content-Type: application/json' \
+  -d '{"refreshToken":"<refresh-token>"}'
+```
+
+Log out:
+
+```bash
+curl -X POST http://localhost:8080/auth/logout \
+  -H 'Authorization: Bearer <access-token>'
+```
+
+Change password:
+
+```bash
+curl -X POST http://localhost:8080/auth/change-password \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <access-token>' \
+  -d '{"currentPassword":"password123","newPassword":"newpass123"}'
+```
+
 Read the current user:
 
 ```bash
@@ -82,19 +109,22 @@ Create a note:
 ```bash
 curl -X POST http://localhost:8080/notes/ \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <access-token>' \
   -d '{"title":"hello","body":"world"}'
 ```
 
 List notes:
 
 ```bash
-curl "http://localhost:8080/notes/?page=1&pageSize=10&sort=created_at&order=desc&q=hello"
+curl "http://localhost:8080/notes/?page=1&pageSize=10&sort=created_at&order=desc&q=hello" \
+  -H 'Authorization: Bearer <access-token>'
 ```
 
 Get one note:
 
 ```bash
-curl http://localhost:8080/notes/1
+curl http://localhost:8080/notes/1 \
+  -H 'Authorization: Bearer <access-token>'
 ```
 
 Update a note:
@@ -102,14 +132,18 @@ Update a note:
 ```bash
 curl -X PUT http://localhost:8080/notes/1 \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <access-token>' \
   -d '{"title":"updated title","body":"updated body"}'
 ```
 
 Delete a note:
 
 ```bash
-curl -X DELETE http://localhost:8080/notes/1
+curl -X DELETE http://localhost:8080/notes/1 \
+  -H 'Authorization: Bearer <access-token>'
 ```
+
+All `/notes` routes now require a valid bearer access token.
 
 ### Notes list query parameters
 
@@ -125,6 +159,7 @@ The list response includes a `meta` block with the resolved paging, sorting, fil
 
 - Swagger UI: `http://localhost:8080/docs`
 - OpenAPI spec: `http://localhost:8080/openapi.yaml`
+- OpenAPI validation: `make openapi-lint`
 
 ## Configuration
 
@@ -218,6 +253,12 @@ If `golangci-lint` is installed locally, run:
 
 ```bash
 make lint
+```
+
+Validate the OpenAPI document:
+
+```bash
+make openapi-lint
 ```
 
 ## Comment standard

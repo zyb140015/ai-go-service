@@ -86,6 +86,27 @@ func (repository *UserRepository) GetByID(ctx context.Context, id int64) (domain
 	return mapUser(record), nil
 }
 
+// UpdatePassword stores a new password hash and returns the updated user.
+func (repository *UserRepository) UpdatePassword(ctx context.Context, id int64, passwordHash string) (domain.User, error) {
+	if repository == nil || repository.queries == nil {
+		return domain.User{}, fmt.Errorf("user repository is unavailable")
+	}
+
+	record, err := repository.queries.UpdateUserPassword(ctx, sqlcdb.UpdateUserPasswordParams{
+		ID:           id,
+		PasswordHash: passwordHash,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.User{}, domain.ErrNotFound
+		}
+
+		return domain.User{}, fmt.Errorf("update user password: %w", err)
+	}
+
+	return mapUser(record), nil
+}
+
 func mapUser(record sqlcdb.AppUser) domain.User {
 	return domain.User{
 		ID:           record.ID,

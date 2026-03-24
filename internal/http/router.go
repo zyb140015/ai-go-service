@@ -32,9 +32,13 @@ func NewRouter(logger *slog.Logger, readinessChecker handlers.ReadinessChecker, 
 	router.Route("/auth", func(authRouter chi.Router) {
 		authRouter.Post("/register", handlers.RegisterHandler(authService))
 		authRouter.Post("/login", handlers.LoginHandler(authService))
+		authRouter.Post("/refresh", handlers.RefreshHandler(authService))
+		authRouter.Post("/logout", handlers.LogoutHandler(authService))
+		authRouter.Post("/change-password", handlers.ChangePasswordHandler(authService))
 		authRouter.Get("/me", handlers.CurrentUserHandler(authService))
 	})
 	router.Route("/notes", func(notesRouter chi.Router) {
+		notesRouter.Use(projectmiddleware.RequireAuth(authService))
 		notesRouter.Get("/", handlers.ListNotesHandler(noteService))
 		notesRouter.Post("/", handlers.CreateNoteHandler(noteService))
 		notesRouter.Get("/{noteID}", handlers.GetNoteHandler(noteService))

@@ -2,7 +2,7 @@ GO ?= go
 SQLC ?= sqlc
 MIGRATE ?= migrate
 
-.PHONY: test vet build run lint tidy sqlc db-up db-down db-logs migrate-up migrate-down migrate-create
+.PHONY: test vet build run lint tidy sqlc db-up db-down db-logs migrate-up migrate-down migrate-create openapi-lint
 
 test:
 	$(GO) test ./...
@@ -42,3 +42,6 @@ migrate-down:
 
 migrate-create:
 	$(MIGRATE) create -ext sql -dir db/migrations -seq $(name)
+
+openapi-lint:
+	docker run --rm -v "$(CURDIR):/work" redocly/cli lint /work/internal/http/apidocs/openapi.yaml

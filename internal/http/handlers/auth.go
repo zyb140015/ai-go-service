@@ -19,6 +19,9 @@ const bearerPrefix = "Bearer "
 type AuthService interface {
 	Register(ctx context.Context, email string, displayName string, password string) (service.AuthResult, error)
 	Login(ctx context.Context, email string, password string) (service.AuthResult, error)
+	Refresh(ctx context.Context, refreshToken string) (service.AuthResult, error)
+	Logout(ctx context.Context, token string) error
+	ChangePassword(ctx context.Context, token string, currentPassword string, newPassword string) (service.AuthResult, error)
 	GetUserByToken(ctx context.Context, token string) (domain.User, error)
 }
 
@@ -35,6 +38,17 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+// RefreshRequest is the expected JSON payload for token refresh.
+type RefreshRequest struct {
+	RefreshToken string `json:"refreshToken"`
+}
+
+// ChangePasswordRequest is the expected JSON payload for password changes.
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
 // AuthUserResponse is the public JSON shape returned for authenticated users.
 type AuthUserResponse struct {
 	ID          int64  `json:"id"`
@@ -46,8 +60,9 @@ type AuthUserResponse struct {
 
 // AuthResponse returns a user and its bearer token.
 type AuthResponse struct {
-	User  AuthUserResponse `json:"user"`
-	Token string           `json:"token"`
+	User         AuthUserResponse `json:"user"`
+	AccessToken  string           `json:"accessToken"`
+	RefreshToken string           `json:"refreshToken"`
 }
 
 // RegisterHandler returns an HTTP handler that creates an account.
@@ -70,7 +85,7 @@ func RegisterHandler(authService AuthService) http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusCreated, AuthResponse{User: toAuthUserResponse(result.User), Token: result.Token})
+		response.JSON(w, http.StatusCreated, toAuthResponse(result))
 	}
 }
 
@@ -94,7 +109,82 @@ func LoginHandler(authService AuthService) http.HandlerFunc {
 			return
 		}
 
-		response.JSON(w, http.StatusOK, AuthResponse{User: toAuthUserResponse(result.User), Token: result.Token})
+		response.JSON(w, http.StatusOK, toAuthResponse(result))
+	}
+}
+
+// RefreshHandler returns an HTTP handler that exchanges a refresh token for a new token pair.
+func RefreshHandler(authService AuthService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if authService == nil {
+			response.Error(w, http.StatusServiceUnavailable, response.CodeServiceUnavailable, "auth service is not ready")
+			return
+		}
+
+		var request RefreshRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			response.Error(w, http.StatusBadRequest, response.CodeInvalidRequest, "request body must be valid JSON")
+			return
+		}
+
+		result, err := authService.Refresh(r.Context(), request.RefreshToken)
+		if err != nil {
+			handleAuthError(w, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, toAuthResponse(result))
+	}
+}
+
+// LogoutHandler returns an HTTP handler that acknowledges token invalidation on the client side.
+func LogoutHandler(authService AuthService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if authService == nil {
+			response.Error(w, http.StatusServiceUnavailable, response.CodeServiceUnavailable, "auth service is not ready")
+			return
+		}
+
+		token, ok := parseBearerToken(w, r)
+		if !ok {
+			return
+		}
+
+		if err := authService.Logout(r.Context(), token); err != nil {
+			handleAuthError(w, err)
+			return
+		}
+
+		response.JSON(w, http.StatusNoContent, nil)
+	}
+}
+
+// ChangePasswordHandler returns an HTTP handler that rotates the current user's password.
+func ChangePasswordHandler(authService AuthService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if authService == nil {
+			response.Error(w, http.StatusServiceUnavailable, response.CodeServiceUnavailable, "auth service is not ready")
+			return
+		}
+
+		token, ok := parseBearerToken(w, r)
+		if !ok {
+			return
+		}
+
+		var request ChangePasswordRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			response.Error(w, http.StatusBadRequest, response.CodeInvalidRequest, "request body must be valid JSON")
+			return
+		}
+
+		result, err := authService.ChangePassword(r.Context(), token, request.CurrentPassword, request.NewPassword)
+		if err != nil {
+			handleAuthError(w, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, toAuthResponse(result))
 	}
 }
 
@@ -168,5 +258,13 @@ func toAuthUserResponse(user domain.User) AuthUserResponse {
 		DisplayName: user.DisplayName,
 		CreatedAt:   user.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:   user.UpdatedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+func toAuthResponse(result service.AuthResult) AuthResponse {
+	return AuthResponse{
+		User:         toAuthUserResponse(result.User),
+		AccessToken:  result.AccessToken,
+		RefreshToken: result.RefreshToken,
 	}
 }

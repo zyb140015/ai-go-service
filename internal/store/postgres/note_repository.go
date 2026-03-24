@@ -2,10 +2,12 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"ai-go-service/internal/domain"
 	"ai-go-service/internal/store/sqlcdb"
+	"github.com/jackc/pgx/v5"
 )
 
 // NoteRepository provides note persistence backed by PostgreSQL.
@@ -57,6 +59,46 @@ func (repository *NoteRepository) List(ctx context.Context) ([]domain.Note, erro
 	}
 
 	return notes, nil
+}
+
+// Update changes a note and returns the updated record.
+func (repository *NoteRepository) Update(ctx context.Context, id int64, title string, body string) (domain.Note, error) {
+	if repository == nil || repository.queries == nil {
+		return domain.Note{}, fmt.Errorf("note repository is unavailable")
+	}
+
+	record, err := repository.queries.UpdateNote(ctx, sqlcdb.UpdateNoteParams{
+		ID:    id,
+		Title: title,
+		Body:  body,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Note{}, domain.ErrNotFound
+		}
+
+		return domain.Note{}, fmt.Errorf("update note: %w", err)
+	}
+
+	return mapNote(record), nil
+}
+
+// Delete removes a note by ID.
+func (repository *NoteRepository) Delete(ctx context.Context, id int64) error {
+	if repository == nil || repository.queries == nil {
+		return fmt.Errorf("note repository is unavailable")
+	}
+
+	rowsAffected, err := repository.queries.DeleteNote(ctx, id)
+	if err != nil {
+		return fmt.Errorf("delete note: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+
+	return nil
 }
 
 func mapNote(record sqlcdb.AppNote) domain.Note {

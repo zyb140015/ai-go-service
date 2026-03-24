@@ -38,6 +38,19 @@ func (q *Queries) CreateNote(ctx context.Context, arg CreateNoteParams) (AppNote
 	return i, err
 }
 
+const deleteNote = `-- name: DeleteNote :execrows
+DELETE FROM app_notes
+WHERE id = $1
+`
+
+func (q *Queries) DeleteNote(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteNote, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listNotes = `-- name: ListNotes :many
 SELECT id, title, body, created_at, updated_at
 FROM app_notes
@@ -68,4 +81,32 @@ func (q *Queries) ListNotes(ctx context.Context) ([]AppNote, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateNote = `-- name: UpdateNote :one
+UPDATE app_notes
+SET title = $2,
+    body = $3,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, title, body, created_at, updated_at
+`
+
+type UpdateNoteParams struct {
+	ID    int64
+	Title string
+	Body  string
+}
+
+func (q *Queries) UpdateNote(ctx context.Context, arg UpdateNoteParams) (AppNote, error) {
+	row := q.db.QueryRow(ctx, updateNote, arg.ID, arg.Title, arg.Body)
+	var i AppNote
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Body,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

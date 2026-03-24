@@ -30,6 +30,8 @@ func NewRouter(logger *slog.Logger, readinessChecker handlers.ReadinessChecker, 
 	router.Route("/notes", func(notesRouter chi.Router) {
 		notesRouter.Get("/", handlers.ListNotesHandler(noteService))
 		notesRouter.Post("/", handlers.CreateNoteHandler(noteService))
+		notesRouter.Put("/{noteID}", handlers.UpdateNoteHandler(noteService))
+		notesRouter.Delete("/{noteID}", handlers.DeleteNoteHandler(noteService))
 	})
 
 	router.NotFound(func(w http.ResponseWriter, _ *http.Request) {

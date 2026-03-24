@@ -43,6 +43,8 @@ If `DATABASE_URL` is provided, the application opens a PostgreSQL pool during st
 - `GET /readyz`
 - `GET /notes/`
 - `POST /notes/`
+- `PUT /notes/{noteID}`
+- `DELETE /notes/{noteID}`
 
 ### Notes API examples
 
@@ -58,6 +60,20 @@ List notes:
 
 ```bash
 curl http://localhost:8080/notes/
+```
+
+Update a note:
+
+```bash
+curl -X PUT http://localhost:8080/notes/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"updated title","body":"updated body"}'
+```
+
+Delete a note:
+
+```bash
+curl -X DELETE http://localhost:8080/notes/1
 ```
 
 ## Configuration
@@ -78,8 +94,40 @@ Duration values accept standard Go duration strings such as `5s` and `1m`.
 ## Database scaffold
 
 - `db/migrations/000001_init.up.sql` creates the sample `app_notes` table.
-- `db/queries/notes.sql` contains concrete `CreateNote` and `ListNotes` queries.
+- `db/queries/notes.sql` contains concrete CRUD queries for notes.
 - `internal/store/postgres/note_repository.go` shows how to wrap generated `sqlc` code behind a repository boundary.
+
+## Local PostgreSQL workflow
+
+Start PostgreSQL locally:
+
+```bash
+make db-up
+```
+
+Set the database connection string:
+
+```bash
+export DATABASE_URL='postgres://postgres:postgres@localhost:5432/ai_go_service?sslmode=disable'
+```
+
+Apply the base migration:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d ai_go_service < db/migrations/000001_init.up.sql
+```
+
+If you need to revert the base migration:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d ai_go_service < db/migrations/000001_init.down.sql
+```
+
+Watch PostgreSQL logs:
+
+```bash
+make db-logs
+```
 
 ## Development commands
 

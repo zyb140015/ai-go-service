@@ -12,3 +12,15 @@ RETURNING id, title, body, created_at, updated_at;
 SELECT id, title, body, created_at, updated_at
 FROM app_notes
 ORDER BY created_at DESC, id DESC;
+
+-- name: UpdateNote :one
+UPDATE app_notes
+SET title = $2,
+    body = $3,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, title, body, created_at, updated_at;
+
+-- name: DeleteNote :execrows
+DELETE FROM app_notes
+WHERE id = $1;

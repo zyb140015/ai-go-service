@@ -13,6 +13,8 @@ import (
 type noteRepositoryStub struct {
 	createFn func(ctx context.Context, title string, body string) (domain.Note, error)
 	listFn   func(ctx context.Context) ([]domain.Note, error)
+	updateFn func(ctx context.Context, id int64, title string, body string) (domain.Note, error)
+	deleteFn func(ctx context.Context, id int64) error
 }
 
 func (stub noteRepositoryStub) Create(ctx context.Context, title string, body string) (domain.Note, error) {
@@ -21,6 +23,14 @@ func (stub noteRepositoryStub) Create(ctx context.Context, title string, body st
 
 func (stub noteRepositoryStub) List(ctx context.Context) ([]domain.Note, error) {
 	return stub.listFn(ctx)
+}
+
+func (stub noteRepositoryStub) Update(ctx context.Context, id int64, title string, body string) (domain.Note, error) {
+	return stub.updateFn(ctx, id, title, body)
+}
+
+func (stub noteRepositoryStub) Delete(ctx context.Context, id int64) error {
+	return stub.deleteFn(ctx, id)
 }
 
 func TestCreateNoteTrimsInput(t *testing.T) {
@@ -32,6 +42,12 @@ func TestCreateNoteTrimsInput(t *testing.T) {
 		},
 		listFn: func(_ context.Context) ([]domain.Note, error) {
 			return nil, nil
+		},
+		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64) error {
+			return nil
 		},
 	})
 
@@ -58,6 +74,12 @@ func TestCreateNoteRejectsBlankTitle(t *testing.T) {
 		},
 		listFn: func(_ context.Context) ([]domain.Note, error) {
 			return nil, nil
+		},
+		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64) error {
+			return nil
 		},
 	})
 
@@ -89,6 +111,12 @@ func TestListNotesReturnsRepositoryData(t *testing.T) {
 		listFn: func(_ context.Context) ([]domain.Note, error) {
 			return []domain.Note{{ID: 1, Title: "demo", Body: "body", CreatedAt: createdAt, UpdatedAt: createdAt}}, nil
 		},
+		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64) error {
+			return nil
+		},
 	})
 
 	notes, err := noteService.ListNotes(context.Background())
@@ -98,5 +126,39 @@ func TestListNotesReturnsRepositoryData(t *testing.T) {
 
 	if len(notes) != 1 {
 		t.Fatalf("expected 1 note, got %d", len(notes))
+	}
+}
+
+func TestUpdateNoteReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
+	noteService := service.NewNoteService(noteRepositoryStub{
+		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		listFn:   func(_ context.Context) ([]domain.Note, error) { return nil, nil },
+		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, domain.ErrNotFound
+		},
+		deleteFn: func(_ context.Context, _ int64) error { return nil },
+	})
+
+	_, err := noteService.UpdateNote(context.Background(), 1, "title", "body")
+	if !errors.Is(err, service.ErrNotFound) {
+		t.Fatalf("expected not found, got %v", err)
+	}
+}
+
+func TestDeleteNoteRejectsInvalidID(t *testing.T) {
+	t.Parallel()
+
+	noteService := service.NewNoteService(noteRepositoryStub{
+		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		listFn:   func(_ context.Context) ([]domain.Note, error) { return nil, nil },
+		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		deleteFn: func(_ context.Context, _ int64) error { return nil },
+	})
+
+	err := noteService.DeleteNote(context.Background(), 0)
+	if !errors.Is(err, service.ErrInvalidInput) {
+		t.Fatalf("expected invalid input, got %v", err)
 	}
 }

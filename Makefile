@@ -1,7 +1,7 @@
 GO ?= go
 SQLC ?= sqlc
 
-.PHONY: test vet build run lint tidy sqlc
+.PHONY: test vet build run lint tidy sqlc db-up db-down db-logs
 
 test:
 	$(GO) test ./...
@@ -23,3 +23,12 @@ tidy:
 
 sqlc:
 	$(SQLC) generate
+
+db-up:
+	docker compose up -d postgres
+
+db-down:
+	docker compose down
+
+db-logs:
+	docker compose logs -f postgres

@@ -50,6 +50,10 @@ func (repository *DesktopDataRepository) EnsureSchemaAndSeed(ctx context.Context
 			description TEXT NOT NULL,
 			status TEXT NOT NULL DEFAULT 'pending'
 		)`,
+		`CREATE TABLE IF NOT EXISTS app_monitor_collection_state (
+			id SMALLINT PRIMARY KEY,
+			last_collected_at TIMESTAMPTZ NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS app_announcements (
 			id BIGSERIAL PRIMARY KEY,
 			title TEXT NOT NULL,
@@ -1112,7 +1116,7 @@ func (repository *DesktopDataRepository) GetMonitorSummary(ctx context.Context) 
 					ELSE '无告警'
 				END,
 			'无告警') AS highest_level,
-			COALESCE(MAX(occurred_at), NOW()) AS last_collected_at
+			COALESCE((SELECT last_collected_at FROM app_monitor_collection_state WHERE id = 1), MAX(occurred_at), NOW()) AS last_collected_at
 		FROM app_monitor_events`
 
 	var summary service.DesktopMonitorSummaryRecord
@@ -1121,6 +1125,20 @@ func (repository *DesktopDataRepository) GetMonitorSummary(ctx context.Context) 
 	}
 
 	return summary, nil
+}
+
+// CollectMonitor records one manual monitor collection timestamp.
+func (repository *DesktopDataRepository) CollectMonitor(ctx context.Context, collectedAt time.Time) error {
+	if repository == nil || repository.pool == nil || repository.pool.pool == nil {
+		return nil
+	}
+
+	_, err := repository.pool.pool.Exec(ctx, `INSERT INTO app_monitor_collection_state (id, last_collected_at) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET last_collected_at = EXCLUDED.last_collected_at`, collectedAt)
+	if err != nil {
+		return fmt.Errorf("collect monitor: %w", err)
+	}
+
+	return nil
 }
 
 // MarkMessageRead marks one stored message as read.
@@ -1175,19 +1193,25 @@ func (repository *DesktopDataRepository) UpdateMonitorStatus(ctx context.Context
 }
 
 func (repository *DesktopDataRepository) seedMessages(ctx context.Context) error {
-	var count int64
-	if err := repository.pool.pool.QueryRow(ctx, `SELECT COUNT(*) FROM app_messages`).Scan(&count); err != nil {
-		return fmt.Errorf("count desktop messages: %w", err)
+	var unreadCount int64
+	if err := repository.pool.pool.QueryRow(ctx, `SELECT COUNT(*) FROM app_messages WHERE is_read = FALSE`).Scan(&unreadCount); err != nil {
+		return fmt.Errorf("count unread desktop messages: %w", err)
 	}
-	if count > 0 {
+	const targetUnreadMessages = 10
+	if unreadCount >= targetUnreadMessages {
 		return nil
 	}
 
-	seedRows := []service.DesktopMessageRecord{
-		{Type: "通知消息", Title: "欢迎使用桌面管理台", Description: "桌面端与 go-admin 账号体系已经打通，可直接处理桌面菜单与个人信息。", PublishedAt: time.Now().Add(-2 * time.Hour), Author: "系统管理员", Read: false},
-		{Type: "系统公告", Title: "桌面端版本升级通知", Description: "本次更新补充了动态菜单、权限校验与个人中心基础能力。", PublishedAt: time.Now().Add(-6 * time.Hour), Author: "产品运营", Read: false},
-		{Type: "培训消息", Title: "监控页使用说明", Description: "可通过系统监控页查看最新告警、指标变化与当前处理状态。", PublishedAt: time.Now().Add(-12 * time.Hour), Author: "培训讲师", Read: true},
-		{Type: "通知消息", Title: "消息中心接入完成", Description: "消息中心已切换为 ai-go-service 数据源，支持按类型与关键字筛选。", PublishedAt: time.Now().Add(-24 * time.Hour), Author: "研发团队", Read: true},
+	seedRows := make([]service.DesktopMessageRecord, 0, targetUnreadMessages)
+	for index := int64(0); index < targetUnreadMessages-unreadCount; index++ {
+		seedRows = append(seedRows, service.DesktopMessageRecord{
+			Type:        "通知消息",
+			Title:       fmt.Sprintf("桌面端待处理消息提醒 %02d", index+1),
+			Description: fmt.Sprintf("第 %02d 条未读消息，提醒及时查看工作台中的待办事项与系统通知。", index+1),
+			PublishedAt: time.Now().Add(-time.Duration(index+1) * time.Hour),
+			Author:      "系统管理员",
+			Read:        false,
+		})
 	}
 
 	for _, item := range seedRows {
@@ -1220,22 +1244,34 @@ func (repository *DesktopDataRepository) seedMonitorEvents(ctx context.Context) 
 			return fmt.Errorf("seed monitor events: %w", err)
 		}
 	}
+	if _, err := repository.pool.pool.Exec(ctx, `INSERT INTO app_monitor_collection_state (id, last_collected_at) VALUES (1, NOW()) ON CONFLICT (id) DO NOTHING`); err != nil {
+		return fmt.Errorf("seed monitor collection state: %w", err)
+	}
 
 	return nil
 }
 
 func (repository *DesktopDataRepository) seedAnnouncements(ctx context.Context) error {
-	var count int64
-	if err := repository.pool.pool.QueryRow(ctx, `SELECT COUNT(*) FROM app_announcements`).Scan(&count); err != nil {
-		return fmt.Errorf("count announcements: %w", err)
+	var publishedCount int64
+	if err := repository.pool.pool.QueryRow(ctx, `SELECT COUNT(*) FROM app_announcements WHERE status = '已发布'`).Scan(&publishedCount); err != nil {
+		return fmt.Errorf("count published announcements: %w", err)
 	}
-	if count > 0 {
+	const targetPublishedAnnouncements = 10
+	if publishedCount >= targetPublishedAnnouncements {
 		return nil
 	}
-	seedRows := []service.DesktopAnnouncementRecord{
-		{Title: "桌面端版本升级通知", Type: "公告", Status: "已发布", PublishedAt: time.Now().Add(-6 * time.Hour), PublishedBy: "张三", CreatedAt: time.Now().Add(-7 * time.Hour), CreatedBy: "张三"},
-		{Title: "节假日值班安排通知", Type: "通知", Status: "待发布", PublishedAt: time.Now().Add(-2 * time.Hour), PublishedBy: "李四", CreatedAt: time.Now().Add(-3 * time.Hour), CreatedBy: "李四"},
-		{Title: "系统巡检草稿", Type: "通知", Status: "草稿", PublishedAt: time.Now().Add(-1 * time.Hour), PublishedBy: "王五", CreatedAt: time.Now().Add(-90 * time.Minute), CreatedBy: "王五"},
+	seedRows := make([]service.DesktopAnnouncementRecord, 0, targetPublishedAnnouncements)
+	for index := int64(0); index < targetPublishedAnnouncements-publishedCount; index++ {
+		publishedAt := time.Now().Add(-time.Duration(index+1) * 2 * time.Hour)
+		seedRows = append(seedRows, service.DesktopAnnouncementRecord{
+			Title:       fmt.Sprintf("桌面端公告通知 %02d", index+1),
+			Type:        "公告",
+			Status:      "已发布",
+			PublishedAt: publishedAt,
+			PublishedBy: "系统管理员",
+			CreatedAt:   publishedAt.Add(-30 * time.Minute),
+			CreatedBy:   "系统管理员",
+		})
 	}
 	for _, item := range seedRows {
 		if _, err := repository.pool.pool.Exec(ctx, `INSERT INTO app_announcements (title, announcement_type, status, published_at, published_by, created_at, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7)`, item.Title, item.Type, item.Status, item.PublishedAt, item.PublishedBy, item.CreatedAt, item.CreatedBy); err != nil {
@@ -1246,35 +1282,99 @@ func (repository *DesktopDataRepository) seedAnnouncements(ctx context.Context) 
 }
 
 func (repository *DesktopDataRepository) seedLoginLogs(ctx context.Context) error {
-	var count int64
-	if err := repository.pool.pool.QueryRow(ctx, `SELECT COUNT(*) FROM app_login_logs`).Scan(&count); err != nil {
-		return fmt.Errorf("count login logs: %w", err)
-	}
-	if count > 0 {
-		return nil
-	}
 	rows := []service.DesktopLoginLogRecord{{LogID: "2345641204845120", TenantCode: "FQJT", Category: "登录", UserID: "100001", Name: "张三", Status: "成功", Time: time.Now().Add(-2 * time.Hour), IP: "10.111.123.131", Address: "广东省深圳市福田区", Browser: "Chrome 11", Desc: "登录成功"}, {LogID: "2345641204845121", TenantCode: "HLGJT", Category: "登录", UserID: "100002", Name: "李四", Status: "失败", Time: time.Now().Add(-90 * time.Minute), IP: "10.111.123.132", Address: "上海市浦东新区", Browser: "Chrome 11", Desc: "密码错误，登录失败"}, {LogID: "2345641204845122", TenantCode: "", Category: "登出", UserID: "100003", Name: "王五", Status: "成功", Time: time.Now().Add(-30 * time.Minute), IP: "10.111.123.133", Address: "北京市朝阳区", Browser: "Chrome 11", Desc: "登出成功"}}
 	for _, item := range rows {
-		if _, err := repository.pool.pool.Exec(ctx, `INSERT INTO app_login_logs (log_id, tenant_code, category, user_id, name, status, occurred_at, ip, address, browser, description) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, item.LogID, item.TenantCode, item.Category, item.UserID, item.Name, item.Status, item.Time, item.IP, item.Address, item.Browser, item.Desc); err != nil {
+		if _, err := repository.pool.pool.Exec(ctx, `INSERT INTO app_login_logs (log_id, tenant_code, category, user_id, name, status, occurred_at, ip, address, browser, description) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11 WHERE NOT EXISTS (SELECT 1 FROM app_login_logs WHERE log_id = $1)`, item.LogID, item.TenantCode, item.Category, item.UserID, item.Name, item.Status, item.Time, item.IP, item.Address, item.Browser, item.Desc); err != nil {
 			return fmt.Errorf("seed login logs: %w", err)
 		}
+	}
+	if err := repository.seedTenantUsageLoginLogs(ctx); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (repository *DesktopDataRepository) seedOperationLogs(ctx context.Context) error {
-	var count int64
-	if err := repository.pool.pool.QueryRow(ctx, `SELECT COUNT(*) FROM app_operation_logs`).Scan(&count); err != nil {
-		return fmt.Errorf("count operation logs: %w", err)
-	}
-	if count > 0 {
-		return nil
-	}
 	rows := []service.DesktopOperationLogRecord{{LogID: "3345641204845120", TenantCode: "FQJT", Module: "租户管理", Category: "修改", UserID: "100001", Name: "张三", Status: "成功", Time: time.Now().Add(-4 * time.Hour), IP: "10.111.123.131", Browser: "Chrome 11", Desc: "修改租户成功"}, {LogID: "3345641204845121", TenantCode: "HLGJT", Module: "菜单管理", Category: "删除", UserID: "100002", Name: "李四", Status: "失败", Time: time.Now().Add(-2 * time.Hour), IP: "10.111.123.132", Browser: "Chrome 11", Desc: "删除菜单失败"}, {LogID: "3345641204845122", TenantCode: "", Module: "用户管理", Category: "新增", UserID: "100003", Name: "王五", Status: "成功", Time: time.Now().Add(-1 * time.Hour), IP: "10.111.123.133", Browser: "Chrome 11", Desc: "新增用户成功"}}
 	for _, item := range rows {
-		if _, err := repository.pool.pool.Exec(ctx, `INSERT INTO app_operation_logs (log_id, tenant_code, module, category, user_id, name, status, occurred_at, ip, browser, description) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, item.LogID, item.TenantCode, item.Module, item.Category, item.UserID, item.Name, item.Status, item.Time, item.IP, item.Browser, item.Desc); err != nil {
+		if _, err := repository.pool.pool.Exec(ctx, `INSERT INTO app_operation_logs (log_id, tenant_code, module, category, user_id, name, status, occurred_at, ip, browser, description) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11 WHERE NOT EXISTS (SELECT 1 FROM app_operation_logs WHERE log_id = $1)`, item.LogID, item.TenantCode, item.Module, item.Category, item.UserID, item.Name, item.Status, item.Time, item.IP, item.Browser, item.Desc); err != nil {
 			return fmt.Errorf("seed operation logs: %w", err)
 		}
+	}
+	if err := repository.seedTenantUsageOperationLogs(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (repository *DesktopDataRepository) seedTenantUsageLoginLogs(ctx context.Context) error {
+	tenantRows, err := repository.pool.pool.Query(ctx, `SELECT code, name FROM app_tenants WHERE code <> '' ORDER BY id ASC`)
+	if err != nil {
+		return fmt.Errorf("query tenants for login log seed: %w", err)
+	}
+	defer tenantRows.Close()
+
+	index := 0
+	for tenantRows.Next() {
+		var tenantCode string
+		var tenantName string
+		if err := tenantRows.Scan(&tenantCode, &tenantName); err != nil {
+			return fmt.Errorf("scan tenant for login log seed: %w", err)
+		}
+		var count int64
+		if err := repository.pool.pool.QueryRow(ctx, `SELECT COUNT(*) FROM app_login_logs WHERE tenant_code = $1`, tenantCode).Scan(&count); err != nil {
+			return fmt.Errorf("count tenant login logs: %w", err)
+		}
+		if count > 0 {
+			index++
+			continue
+		}
+		logID := fmt.Sprintf("tenant-login-seed-%s", tenantCode)
+		occurredAt := time.Now().Add(-time.Duration(index+1) * 75 * time.Minute)
+		if _, err := repository.pool.pool.Exec(ctx, `INSERT INTO app_login_logs (log_id, tenant_code, category, user_id, name, status, occurred_at, ip, address, browser, description) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11 WHERE NOT EXISTS (SELECT 1 FROM app_login_logs WHERE log_id = $1)`, logID, tenantCode, "登录", fmt.Sprintf("tenant-%02d", index+1), tenantName, "成功", occurredAt, fmt.Sprintf("10.10.10.%d", index+10), "北京市朝阳区", "Chrome 11", fmt.Sprintf("%s 登录成功", tenantName)); err != nil {
+			return fmt.Errorf("seed tenant login log: %w", err)
+		}
+		index++
+	}
+	if err := tenantRows.Err(); err != nil {
+		return fmt.Errorf("iterate tenants for login log seed: %w", err)
+	}
+	return nil
+}
+
+func (repository *DesktopDataRepository) seedTenantUsageOperationLogs(ctx context.Context) error {
+	tenantRows, err := repository.pool.pool.Query(ctx, `SELECT code, name FROM app_tenants WHERE code <> '' ORDER BY id ASC`)
+	if err != nil {
+		return fmt.Errorf("query tenants for operation log seed: %w", err)
+	}
+	defer tenantRows.Close()
+
+	modules := []string{"用户管理", "租户管理", "菜单管理", "系统监控"}
+	index := 0
+	for tenantRows.Next() {
+		var tenantCode string
+		var tenantName string
+		if err := tenantRows.Scan(&tenantCode, &tenantName); err != nil {
+			return fmt.Errorf("scan tenant for operation log seed: %w", err)
+		}
+		var count int64
+		if err := repository.pool.pool.QueryRow(ctx, `SELECT COUNT(*) FROM app_operation_logs WHERE tenant_code = $1`, tenantCode).Scan(&count); err != nil {
+			return fmt.Errorf("count tenant operation logs: %w", err)
+		}
+		if count > 0 {
+			index++
+			continue
+		}
+		logID := fmt.Sprintf("tenant-operation-seed-%s", tenantCode)
+		occurredAt := time.Now().Add(-time.Duration(index+1) * 90 * time.Minute)
+		module := modules[index%len(modules)]
+		if _, err := repository.pool.pool.Exec(ctx, `INSERT INTO app_operation_logs (log_id, tenant_code, module, category, user_id, name, status, occurred_at, ip, browser, description) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11 WHERE NOT EXISTS (SELECT 1 FROM app_operation_logs WHERE log_id = $1)`, logID, tenantCode, module, "查看", fmt.Sprintf("tenant-%02d", index+1), tenantName, "成功", occurredAt, fmt.Sprintf("10.10.20.%d", index+10), "Chrome 11", fmt.Sprintf("%s 查看%s", tenantName, module)); err != nil {
+			return fmt.Errorf("seed tenant operation log: %w", err)
+		}
+		index++
+	}
+	if err := tenantRows.Err(); err != nil {
+		return fmt.Errorf("iterate tenants for operation log seed: %w", err)
 	}
 	return nil
 }

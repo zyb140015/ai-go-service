@@ -278,6 +278,7 @@ type DesktopDataRepository interface {
 	GetSystemStatsSource(ctx context.Context) (DesktopSystemStatsSource, error)
 	GetUsageStatsSource(ctx context.Context) (DesktopUsageStatsSource, error)
 	GetMonitorSummary(ctx context.Context) (DesktopMonitorSummaryRecord, error)
+	CollectMonitor(ctx context.Context, collectedAt time.Time) error
 	MarkMessageRead(ctx context.Context, id int64) error
 	MarkMessagesRead(ctx context.Context, ids []int64) error
 	UpdateMonitorStatus(ctx context.Context, id int64, status string) error
@@ -285,10 +286,11 @@ type DesktopDataRepository interface {
 
 // DesktopDataService serves desktop messages and monitor data.
 type DesktopDataService struct {
-	repository DesktopDataRepository
-	mu         sync.RWMutex
-	messages   []DesktopMessage
-	monitor    []DesktopMonitorItem
+	repository         DesktopDataRepository
+	mu                 sync.RWMutex
+	messages           []DesktopMessage
+	monitor            []DesktopMonitorItem
+	monitorCollectedAt time.Time
 }
 
 // DesktopMessage is the stable desktop-facing message DTO.
@@ -653,9 +655,10 @@ type DesktopSystemSettings struct {
 // NewDesktopDataService creates a desktop data service.
 func NewDesktopDataService(repository DesktopDataRepository) *DesktopDataService {
 	return &DesktopDataService{
-		repository: repository,
-		messages:   fallbackMessages(),
-		monitor:    fallbackMonitorItems(),
+		repository:         repository,
+		messages:           fallbackMessages(),
+		monitor:            fallbackMonitorItems(),
+		monitorCollectedAt: time.Now(),
 	}
 }
 
@@ -716,7 +719,11 @@ func (service *DesktopDataService) ListMonitor(ctx context.Context, metric strin
 		defer service.mu.RUnlock()
 		items := filterMonitorItems(service.monitor, metric, level)
 		pagedItems := paginateMonitorItems(items, page, pageSize)
-		return DesktopMonitorResponse{Summary: buildFallbackMonitorSummary(items), Items: pagedItems, Total: len(items), Page: page, PageSize: pageSize}, nil
+		summary := buildFallbackMonitorSummary(items)
+		if !service.monitorCollectedAt.IsZero() {
+			summary.LastCollectedAt = service.monitorCollectedAt.Format(time.DateTime)
+		}
+		return DesktopMonitorResponse{Summary: summary, Items: pagedItems, Total: len(items), Page: page, PageSize: pageSize}, nil
 	}
 
 	summary, err := service.repository.GetMonitorSummary(ctx)
@@ -763,6 +770,24 @@ func (service *DesktopDataService) ListMonitor(ctx context.Context, metric strin
 		Page:     page,
 		PageSize: pageSize,
 	}, nil
+}
+
+// CollectMonitor records one manual monitor collection timestamp.
+func (service *DesktopDataService) CollectMonitor(ctx context.Context) error {
+	if service == nil {
+		return ErrUnavailable
+	}
+
+	collectedAt := time.Now()
+	service.mu.Lock()
+	service.monitorCollectedAt = collectedAt
+	service.mu.Unlock()
+
+	if service.repository == nil {
+		return nil
+	}
+
+	return service.repository.CollectMonitor(ctx, collectedAt)
 }
 
 // ListAnnouncements returns announcements for the desktop page.

@@ -58,6 +58,7 @@ type DesktopDataUseCase interface {
 	PublishAnnouncement(ctx context.Context, id int64) error
 	MarkMessageRead(ctx context.Context, id int64) error
 	MarkMessagesRead(ctx context.Context, ids []int64) error
+	CollectMonitor(ctx context.Context) error
 	UpdateMonitorStatus(ctx context.Context, id int64, status string) error
 }
 
@@ -1050,6 +1051,25 @@ func DesktopUpdateMonitorStatusHandler(dataService DesktopDataUseCase) http.Hand
 			return
 		}
 		if err := dataService.UpdateMonitorStatus(r.Context(), request.ID, request.Status); err != nil {
+			handleDesktopDataError(w, err)
+			return
+		}
+		response.JSON(w, http.StatusOK, map[string]bool{"success": true})
+	}
+}
+
+// DesktopCollectMonitorHandler triggers one manual monitor collection.
+func DesktopCollectMonitorHandler(dataService DesktopDataUseCase) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if dataService == nil {
+			response.Error(w, http.StatusServiceUnavailable, response.CodeServiceUnavailable, "desktop data service is not ready")
+			return
+		}
+		if _, err := parseDesktopBearerToken(r); err != nil {
+			response.Error(w, http.StatusUnauthorized, response.CodeUnauthorized, err.Error())
+			return
+		}
+		if err := dataService.CollectMonitor(r.Context()); err != nil {
 			handleDesktopDataError(w, err)
 			return
 		}

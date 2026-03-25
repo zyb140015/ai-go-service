@@ -43,7 +43,10 @@ type ProfileResult struct {
 	Email     string `json:"email"`
 	Avatar    string `json:"avatar"`
 	Sex       string `json:"sex"`
+	Phone     string `json:"phone"`
+	Remark    string `json:"remark"`
 	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // MenuResult is one menu item returned by go-admin.

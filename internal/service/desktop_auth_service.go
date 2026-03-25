@@ -170,7 +170,7 @@ func (service *DesktopAuthService) UpdateCurrentProfile(ctx context.Context, acc
 		return DesktopUser{}, err
 	}
 	return mapProfileUser(result), nil
-	}
+}
 
 // UploadCurrentAvatar uploads the current user's avatar through go-admin.
 func (service *DesktopAuthService) UploadCurrentAvatar(ctx context.Context, accessToken string, fileName string, fileContent []byte) (string, error) {
@@ -207,6 +207,9 @@ func mapProfileUser(input goadmin.ProfileResult) DesktopUser {
 		Email:     input.Email,
 		Avatar:    input.Avatar,
 		Sex:       input.Sex,
+		Phone:     input.Phone,
+		Remark:    input.Remark,
 		CreatedAt: input.CreatedAt,
+		UpdatedAt: input.UpdatedAt,
 	}
 }

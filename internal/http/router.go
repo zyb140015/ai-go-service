@@ -102,6 +102,7 @@ func NewRouter(logger *slog.Logger, readinessChecker handlers.ReadinessChecker, 
 		desktopRouter.Get("/logs/login", handlers.DesktopLoginLogsHandler(desktopDataService))
 		desktopRouter.Get("/logs/operation", handlers.DesktopOperationLogsHandler(desktopDataService))
 		desktopRouter.Get("/monitor", handlers.DesktopMonitorHandler(desktopDataService))
+		desktopRouter.Post("/monitor/collect", handlers.DesktopCollectMonitorHandler(desktopDataService))
 		desktopRouter.Post("/monitor/status", handlers.DesktopUpdateMonitorStatusHandler(desktopDataService))
 		desktopRouter.Get("/stats/system", handlers.DesktopSystemStatsHandler(desktopDataService))
 		desktopRouter.Get("/stats/usage", handlers.DesktopUsageStatsHandler(desktopDataService))

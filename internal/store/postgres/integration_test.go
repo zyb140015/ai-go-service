@@ -19,25 +19,27 @@ func TestNoteRepositoryCRUDAndPagination(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	pool, cleanup := newTestPool(t, ctx)
+	const userID int64 = 1
+	pool, pgxPool, cleanup := newTestPool(t, ctx)
 	defer cleanup()
+	ensureTestUser(t, ctx, pgxPool, userID)
 
 	repository := postgres.NewNoteRepository(pool)
 	if repository == nil {
 		t.Fatal("expected note repository")
 	}
 
-	createdOne, err := repository.Create(ctx, "hello", "world")
+	createdOne, err := repository.Create(ctx, userID, "hello", "world")
 	if err != nil {
 		t.Fatalf("create first note: %v", err)
 	}
 
-	createdTwo, err := repository.Create(ctx, "alpha", "beta")
+	createdTwo, err := repository.Create(ctx, userID, "alpha", "beta")
 	if err != nil {
 		t.Fatalf("create second note: %v", err)
 	}
 
-	page, total, err := repository.List(ctx, service.NoteListOptions{
+	page, total, err := repository.List(ctx, userID, service.NoteListOptions{
 		Page:          1,
 		PageSize:      1,
 		SortField:     service.NoteSortFieldTitle,
@@ -56,7 +58,7 @@ func TestNoteRepositoryCRUDAndPagination(t *testing.T) {
 		t.Fatalf("expected filtered note %d, got %#v", createdTwo.ID, page)
 	}
 
-	loaded, err := repository.GetByID(ctx, createdOne.ID)
+	loaded, err := repository.GetByID(ctx, userID, createdOne.ID)
 	if err != nil {
 		t.Fatalf("get note by id: %v", err)
 	}
@@ -65,7 +67,7 @@ func TestNoteRepositoryCRUDAndPagination(t *testing.T) {
 		t.Fatalf("expected title %q, got %q", createdOne.Title, loaded.Title)
 	}
 
-	updated, err := repository.Update(ctx, createdOne.ID, "hello-updated", "world-updated")
+	updated, err := repository.Update(ctx, userID, createdOne.ID, "hello-updated", "world-updated")
 	if err != nil {
 		t.Fatalf("update note: %v", err)
 	}
@@ -74,17 +76,25 @@ func TestNoteRepositoryCRUDAndPagination(t *testing.T) {
 		t.Fatalf("expected updated title, got %q", updated.Title)
 	}
 
-	if err := repository.Delete(ctx, createdTwo.ID); err != nil {
+	if err := repository.Delete(ctx, userID, createdTwo.ID); err != nil {
 		t.Fatalf("delete note: %v", err)
 	}
 
-	_, err = repository.GetByID(ctx, createdTwo.ID)
+	_, err = repository.GetByID(ctx, userID, createdTwo.ID)
 	if err == nil {
 		t.Fatal("expected deleted note lookup to fail")
 	}
 }
 
-func newTestPool(t *testing.T, ctx context.Context) (*postgres.Pool, func()) {
+func ensureTestUser(t *testing.T, ctx context.Context, pool *pgxpool.Pool, userID int64) {
+	t.Helper()
+	_, err := pool.Exec(ctx, `INSERT INTO users (id, email, display_name, password_hash, created_at, updated_at) VALUES ($1, $2, $3, $4, NOW(), NOW()) ON CONFLICT (id) DO NOTHING`, userID, "user@example.com", "Demo", "hashed")
+	if err != nil {
+		t.Fatalf("seed test user: %v", err)
+	}
+}
+
+func newTestPool(t *testing.T, ctx context.Context) (*postgres.Pool, *pgxpool.Pool, func()) {
 	t.Helper()
 	testcontainers.SkipIfProviderIsNotHealthy(t)
 
@@ -129,7 +139,7 @@ func newTestPool(t *testing.T, ctx context.Context) (*postgres.Pool, func()) {
 		_ = container.Terminate(context.Background())
 	}
 
-	return pool, cleanup
+	return pool, pgxPool, cleanup
 }
 
 func applyMigrations(ctx context.Context, pool *pgxpool.Pool) error {

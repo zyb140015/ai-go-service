@@ -37,6 +37,25 @@ go run ./cmd/server
 The service starts on `:8080` by default.
 If `DATABASE_URL` is provided, the application opens a PostgreSQL pool during startup and checks it from `/readyz`.
 
+### Desktop local run
+
+For the desktop app integration, start the current source code directly instead of reusing an old compiled binary:
+
+```bash
+make run-desktop-local
+```
+
+This target runs `go run ./cmd/server` with local defaults for:
+
+- `GOADMIN_BASE_URL=http://127.0.0.1:8081`
+- `DATABASE_URL=postgres://postgres:postgres@localhost:5432/ai_go_service?sslmode=disable`
+
+You can override either value when needed:
+
+```bash
+make run-desktop-local LOCAL_GOADMIN_BASE_URL=http://127.0.0.1:9000
+```
+
 ## Endpoints
 
 - `GET /healthz`

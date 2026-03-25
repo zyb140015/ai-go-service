@@ -1,17 +1,20 @@
 -- name: CreateNote :one
 INSERT INTO app_notes (
+    user_id,
     title,
     body
 ) VALUES (
     $1,
-    $2
+    $2,
+    $3
 )
-RETURNING id, title, body, created_at, updated_at;
+RETURNING id, user_id, title, body, created_at, updated_at;
 
 -- name: ListNotes :many
-SELECT id, title, body, created_at, updated_at
+SELECT id, user_id, title, body, created_at, updated_at
 FROM app_notes
-WHERE CASE
+WHERE user_id = sqlc.arg(user_id)
+  AND CASE
     WHEN sqlc.narg(query_text)::text IS NULL OR sqlc.narg(query_text)::text = '' THEN TRUE
     ELSE title ILIKE '%' || sqlc.narg(query_text)::text || '%'
 END
@@ -27,15 +30,17 @@ OFFSET sqlc.arg(offset_count);
 -- name: CountNotes :one
 SELECT COUNT(*)
 FROM app_notes
-WHERE CASE
+WHERE user_id = sqlc.arg(user_id)
+  AND CASE
     WHEN sqlc.narg(query_text)::text IS NULL OR sqlc.narg(query_text)::text = '' THEN TRUE
     ELSE title ILIKE '%' || sqlc.narg(query_text)::text || '%'
 END;
 
 -- name: GetNoteByID :one
-SELECT id, title, body, created_at, updated_at
+SELECT id, user_id, title, body, created_at, updated_at
 FROM app_notes
-WHERE id = $1;
+WHERE id = $1
+  AND user_id = $2;
 
 -- name: UpdateNote :one
 UPDATE app_notes
@@ -43,8 +48,10 @@ SET title = $2,
     body = $3,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, title, body, created_at, updated_at;
+  AND user_id = $4
+RETURNING id, user_id, title, body, created_at, updated_at;
 
 -- name: DeleteNote :execrows
 DELETE FROM app_notes
-WHERE id = $1;
+WHERE id = $1
+  AND user_id = $2;

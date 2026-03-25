@@ -20,11 +20,11 @@ var (
 
 // NoteRepository defines the persistence behavior required by NoteService.
 type NoteRepository interface {
-	Create(ctx context.Context, title string, body string) (domain.Note, error)
-	List(ctx context.Context, options NoteListOptions) ([]domain.Note, int64, error)
-	GetByID(ctx context.Context, id int64) (domain.Note, error)
-	Update(ctx context.Context, id int64, title string, body string) (domain.Note, error)
-	Delete(ctx context.Context, id int64) error
+	Create(ctx context.Context, userID int64, title string, body string) (domain.Note, error)
+	List(ctx context.Context, userID int64, options NoteListOptions) ([]domain.Note, int64, error)
+	GetByID(ctx context.Context, userID int64, id int64) (domain.Note, error)
+	Update(ctx context.Context, userID int64, id int64, title string, body string) (domain.Note, error)
+	Delete(ctx context.Context, userID int64, id int64) error
 }
 
 // NoteService validates note inputs and delegates persistence to a repository.
@@ -38,9 +38,13 @@ func NewNoteService(repository NoteRepository) *NoteService {
 }
 
 // CreateNote validates and creates a new note.
-func (service *NoteService) CreateNote(ctx context.Context, title string, body string) (domain.Note, error) {
+func (service *NoteService) CreateNote(ctx context.Context, userID int64, title string, body string) (domain.Note, error) {
 	if service == nil || service.repository == nil {
 		return domain.Note{}, ErrUnavailable
+	}
+
+	if userID <= 0 {
+		return domain.Note{}, fmt.Errorf("user id must be positive: %w", ErrInvalidInput)
 	}
 
 	trimmedTitle := strings.TrimSpace(title)
@@ -53,7 +57,7 @@ func (service *NoteService) CreateNote(ctx context.Context, title string, body s
 		return domain.Note{}, fmt.Errorf("body is required: %w", ErrInvalidInput)
 	}
 
-	note, err := service.repository.Create(ctx, trimmedTitle, trimmedBody)
+	note, err := service.repository.Create(ctx, userID, trimmedTitle, trimmedBody)
 	if err != nil {
 		return domain.Note{}, fmt.Errorf("create note: %w", err)
 	}
@@ -62,9 +66,13 @@ func (service *NoteService) CreateNote(ctx context.Context, title string, body s
 }
 
 // ListNotes returns a filtered page of notes ordered by the requested sort.
-func (service *NoteService) ListNotes(ctx context.Context, options NoteListOptions) (NoteListResult, error) {
+func (service *NoteService) ListNotes(ctx context.Context, userID int64, options NoteListOptions) (NoteListResult, error) {
 	if service == nil || service.repository == nil {
 		return NoteListResult{}, ErrUnavailable
+	}
+
+	if userID <= 0 {
+		return NoteListResult{}, fmt.Errorf("user id must be positive: %w", ErrInvalidInput)
 	}
 
 	normalizedOptions, err := normalizeListOptions(options)
@@ -72,7 +80,7 @@ func (service *NoteService) ListNotes(ctx context.Context, options NoteListOptio
 		return NoteListResult{}, err
 	}
 
-	notes, total, err := service.repository.List(ctx, normalizedOptions)
+	notes, total, err := service.repository.List(ctx, userID, normalizedOptions)
 	if err != nil {
 		return NoteListResult{}, fmt.Errorf("list notes: %w", err)
 	}
@@ -89,16 +97,20 @@ func (service *NoteService) ListNotes(ctx context.Context, options NoteListOptio
 }
 
 // GetNote returns one note by ID.
-func (service *NoteService) GetNote(ctx context.Context, id int64) (domain.Note, error) {
+func (service *NoteService) GetNote(ctx context.Context, userID int64, id int64) (domain.Note, error) {
 	if service == nil || service.repository == nil {
 		return domain.Note{}, ErrUnavailable
+	}
+
+	if userID <= 0 {
+		return domain.Note{}, fmt.Errorf("user id must be positive: %w", ErrInvalidInput)
 	}
 
 	if id <= 0 {
 		return domain.Note{}, fmt.Errorf("id must be positive: %w", ErrInvalidInput)
 	}
 
-	note, err := service.repository.GetByID(ctx, id)
+	note, err := service.repository.GetByID(ctx, userID, id)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return domain.Note{}, ErrNotFound
@@ -111,9 +123,13 @@ func (service *NoteService) GetNote(ctx context.Context, id int64) (domain.Note,
 }
 
 // UpdateNote validates and updates an existing note.
-func (service *NoteService) UpdateNote(ctx context.Context, id int64, title string, body string) (domain.Note, error) {
+func (service *NoteService) UpdateNote(ctx context.Context, userID int64, id int64, title string, body string) (domain.Note, error) {
 	if service == nil || service.repository == nil {
 		return domain.Note{}, ErrUnavailable
+	}
+
+	if userID <= 0 {
+		return domain.Note{}, fmt.Errorf("user id must be positive: %w", ErrInvalidInput)
 	}
 
 	if id <= 0 {
@@ -130,7 +146,7 @@ func (service *NoteService) UpdateNote(ctx context.Context, id int64, title stri
 		return domain.Note{}, fmt.Errorf("body is required: %w", ErrInvalidInput)
 	}
 
-	note, err := service.repository.Update(ctx, id, trimmedTitle, trimmedBody)
+	note, err := service.repository.Update(ctx, userID, id, trimmedTitle, trimmedBody)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return domain.Note{}, ErrNotFound
@@ -143,16 +159,20 @@ func (service *NoteService) UpdateNote(ctx context.Context, id int64, title stri
 }
 
 // DeleteNote removes an existing note.
-func (service *NoteService) DeleteNote(ctx context.Context, id int64) error {
+func (service *NoteService) DeleteNote(ctx context.Context, userID int64, id int64) error {
 	if service == nil || service.repository == nil {
 		return ErrUnavailable
+	}
+
+	if userID <= 0 {
+		return fmt.Errorf("user id must be positive: %w", ErrInvalidInput)
 	}
 
 	if id <= 0 {
 		return fmt.Errorf("id must be positive: %w", ErrInvalidInput)
 	}
 
-	err := service.repository.Delete(ctx, id)
+	err := service.repository.Delete(ctx, userID, id)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return ErrNotFound

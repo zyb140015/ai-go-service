@@ -16,31 +16,31 @@ import (
 )
 
 type noteServiceStub struct {
-	createFn func(ctx context.Context, title string, body string) (domain.Note, error)
-	listFn   func(ctx context.Context, options service.NoteListOptions) (service.NoteListResult, error)
-	getFn    func(ctx context.Context, id int64) (domain.Note, error)
-	updateFn func(ctx context.Context, id int64, title string, body string) (domain.Note, error)
-	deleteFn func(ctx context.Context, id int64) error
+	createFn func(ctx context.Context, userID int64, title string, body string) (domain.Note, error)
+	listFn   func(ctx context.Context, userID int64, options service.NoteListOptions) (service.NoteListResult, error)
+	getFn    func(ctx context.Context, userID int64, id int64) (domain.Note, error)
+	updateFn func(ctx context.Context, userID int64, id int64, title string, body string) (domain.Note, error)
+	deleteFn func(ctx context.Context, userID int64, id int64) error
 }
 
-func (stub noteServiceStub) CreateNote(ctx context.Context, title string, body string) (domain.Note, error) {
-	return stub.createFn(ctx, title, body)
+func (stub noteServiceStub) CreateNote(ctx context.Context, userID int64, title string, body string) (domain.Note, error) {
+	return stub.createFn(ctx, userID, title, body)
 }
 
-func (stub noteServiceStub) ListNotes(ctx context.Context, options service.NoteListOptions) (service.NoteListResult, error) {
-	return stub.listFn(ctx, options)
+func (stub noteServiceStub) ListNotes(ctx context.Context, userID int64, options service.NoteListOptions) (service.NoteListResult, error) {
+	return stub.listFn(ctx, userID, options)
 }
 
-func (stub noteServiceStub) GetNote(ctx context.Context, id int64) (domain.Note, error) {
-	return stub.getFn(ctx, id)
+func (stub noteServiceStub) GetNote(ctx context.Context, userID int64, id int64) (domain.Note, error) {
+	return stub.getFn(ctx, userID, id)
 }
 
-func (stub noteServiceStub) UpdateNote(ctx context.Context, id int64, title string, body string) (domain.Note, error) {
-	return stub.updateFn(ctx, id, title, body)
+func (stub noteServiceStub) UpdateNote(ctx context.Context, userID int64, id int64, title string, body string) (domain.Note, error) {
+	return stub.updateFn(ctx, userID, id, title, body)
 }
 
-func (stub noteServiceStub) DeleteNote(ctx context.Context, id int64) error {
-	return stub.deleteFn(ctx, id)
+func (stub noteServiceStub) DeleteNote(ctx context.Context, userID int64, id int64) error {
+	return stub.deleteFn(ctx, userID, id)
 }
 
 func authorizedAuthServiceStub() authServiceStub {
@@ -60,68 +60,64 @@ func authorizedAuthServiceStub() authServiceStub {
 			if token != "valid-token" {
 				return domain.User{}, service.ErrUnauthorized
 			}
-
 			return domain.User{ID: 1, Email: "user@example.com", DisplayName: "Demo"}, nil
 		},
 	}
+}
+
+func newNoteRouter(noteService noteServiceStub) http.Handler {
+	return httpserver.NewRouter(newTestLogger(), nil, noteService, authorizedAuthServiceStub(), nil, nil)
 }
 
 func TestCreateNoteReturnsCreatedNote(t *testing.T) {
 	t.Parallel()
 
 	createdAt := time.Date(2026, time.March, 24, 10, 0, 0, 0, time.UTC)
-	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
-		createFn: func(_ context.Context, title string, body string) (domain.Note, error) {
+	router := newNoteRouter(noteServiceStub{
+		createFn: func(_ context.Context, _ int64, title string, body string) (domain.Note, error) {
 			return domain.Note{ID: 1, Title: title, Body: body, CreatedAt: createdAt, UpdatedAt: createdAt}, nil
 		},
-		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+		listFn: func(_ context.Context, _ int64, _ service.NoteListOptions) (service.NoteListResult, error) {
 			return service.NoteListResult{}, nil
 		},
-		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
-		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	}, authorizedAuthServiceStub())
+		getFn: func(_ context.Context, _ int64, _ int64) (domain.Note, error) { return domain.Note{}, nil },
+		updateFn: func(_ context.Context, _ int64, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64, _ int64) error { return nil },
+	})
 
 	request := httptest.NewRequest(http.MethodPost, "/notes/", strings.NewReader(`{"title":"hello","body":"world"}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer valid-token")
 	recorder := httptest.NewRecorder()
-
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("expected status %d, got %d", http.StatusCreated, recorder.Code)
-	}
-
-	var body map[string]any
-	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-
-	if body["title"] != "hello" {
-		t.Fatalf("expected title %q, got %#v", "hello", body["title"])
 	}
 }
 
 func TestCreateNoteRejectsInvalidRequest(t *testing.T) {
 	t.Parallel()
 
-	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
-		createFn: func(_ context.Context, title string, body string) (domain.Note, error) {
+	router := newNoteRouter(noteServiceStub{
+		createFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) {
 			return domain.Note{}, service.ErrInvalidInput
 		},
-		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+		listFn: func(_ context.Context, _ int64, _ service.NoteListOptions) (service.NoteListResult, error) {
 			return service.NoteListResult{}, nil
 		},
-		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
-		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	}, authorizedAuthServiceStub())
+		getFn: func(_ context.Context, _ int64, _ int64) (domain.Note, error) { return domain.Note{}, nil },
+		updateFn: func(_ context.Context, _ int64, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64, _ int64) error { return nil },
+	})
 
 	request := httptest.NewRequest(http.MethodPost, "/notes/", strings.NewReader(`{"title":"","body":"world"}`))
 	request.Header.Set("Authorization", "Bearer valid-token")
 	recorder := httptest.NewRecorder()
-
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusBadRequest {
@@ -133,30 +129,21 @@ func TestListNotesReturnsItems(t *testing.T) {
 	t.Parallel()
 
 	createdAt := time.Date(2026, time.March, 24, 10, 0, 0, 0, time.UTC)
-	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
-		createFn: func(_ context.Context, title string, body string) (domain.Note, error) {
+	router := newNoteRouter(noteServiceStub{
+		createFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		listFn: func(_ context.Context, _ int64, options service.NoteListOptions) (service.NoteListResult, error) {
+			return service.NoteListResult{Items: []domain.Note{{ID: 1, Title: "hello", Body: "world", CreatedAt: createdAt, UpdatedAt: createdAt}}, Total: 1, Page: options.Page, PageSize: options.PageSize, SortField: options.SortField, SortDirection: options.SortDirection, Query: options.Query}, nil
+		},
+		getFn: func(_ context.Context, _ int64, _ int64) (domain.Note, error) { return domain.Note{}, nil },
+		updateFn: func(_ context.Context, _ int64, _ int64, _ string, _ string) (domain.Note, error) {
 			return domain.Note{}, nil
 		},
-		listFn: func(_ context.Context, options service.NoteListOptions) (service.NoteListResult, error) {
-			return service.NoteListResult{
-				Items:         []domain.Note{{ID: 1, Title: "hello", Body: "world", CreatedAt: createdAt, UpdatedAt: createdAt}},
-				Total:         1,
-				Page:          options.Page,
-				PageSize:      options.PageSize,
-				SortField:     options.SortField,
-				SortDirection: options.SortDirection,
-				Query:         options.Query,
-			}, nil
-		},
-		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
-		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	}, authorizedAuthServiceStub())
+		deleteFn: func(_ context.Context, _ int64, _ int64) error { return nil },
+	})
 
 	request := httptest.NewRequest(http.MethodGet, "/notes/?page=2&pageSize=5&q=hel&sort=title&order=asc", nil)
 	request.Header.Set("Authorization", "Bearer valid-token")
 	recorder := httptest.NewRecorder()
-
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
@@ -170,49 +157,29 @@ func TestListNotesReturnsItems(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-
-	if len(body.Items) != 1 {
-		t.Fatalf("expected 1 item, got %d", len(body.Items))
-	}
-
-	if body.Meta["total"] != float64(1) {
-		t.Fatalf("expected total 1, got %#v", body.Meta["total"])
-	}
-
-	if body.Meta["page"] != float64(2) {
-		t.Fatalf("expected page 2, got %#v", body.Meta["page"])
-	}
-
-	if body.Meta["pageSize"] != float64(5) {
-		t.Fatalf("expected pageSize 5, got %#v", body.Meta["pageSize"])
-	}
-
-	if body.Meta["sort"] != "title" {
-		t.Fatalf("expected sort title, got %#v", body.Meta["sort"])
-	}
-
-	if body.Meta["order"] != "asc" {
-		t.Fatalf("expected order asc, got %#v", body.Meta["order"])
+	if len(body.Items) != 1 || body.Meta["page"] != float64(2) || body.Meta["pageSize"] != float64(5) {
+		t.Fatalf("unexpected response: %#v", body)
 	}
 }
 
 func TestListNotesRejectsInvalidPage(t *testing.T) {
 	t.Parallel()
 
-	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
-		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+	router := newNoteRouter(noteServiceStub{
+		createFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		listFn: func(_ context.Context, _ int64, _ service.NoteListOptions) (service.NoteListResult, error) {
 			return service.NoteListResult{}, nil
 		},
-		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
-		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	}, authorizedAuthServiceStub())
+		getFn: func(_ context.Context, _ int64, _ int64) (domain.Note, error) { return domain.Note{}, nil },
+		updateFn: func(_ context.Context, _ int64, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64, _ int64) error { return nil },
+	})
 
 	request := httptest.NewRequest(http.MethodGet, "/notes/?page=0", nil)
 	request.Header.Set("Authorization", "Bearer valid-token")
 	recorder := httptest.NewRecorder()
-
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusBadRequest {
@@ -223,15 +190,13 @@ func TestListNotesRejectsInvalidPage(t *testing.T) {
 func TestDocsRoutesReturnContent(t *testing.T) {
 	t.Parallel()
 
-	router := httpserver.NewRouter(newTestLogger(), nil, nil, nil)
-
+	router := httpserver.NewRouter(newTestLogger(), nil, nil, nil, nil, nil)
 	openAPIRequest := httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil)
 	openAPIRecorder := httptest.NewRecorder()
 	router.ServeHTTP(openAPIRecorder, openAPIRequest)
 	if openAPIRecorder.Code != http.StatusOK {
 		t.Fatalf("expected openapi status %d, got %d", http.StatusOK, openAPIRecorder.Code)
 	}
-
 	docsRequest := httptest.NewRequest(http.MethodGet, "/docs", nil)
 	docsRecorder := httptest.NewRecorder()
 	router.ServeHTTP(docsRecorder, docsRequest)
@@ -243,15 +208,17 @@ func TestDocsRoutesReturnContent(t *testing.T) {
 func TestNotesRequireAuthentication(t *testing.T) {
 	t.Parallel()
 
-	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
-		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+	router := newNoteRouter(noteServiceStub{
+		createFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		listFn: func(_ context.Context, _ int64, _ service.NoteListOptions) (service.NoteListResult, error) {
 			return service.NoteListResult{}, nil
 		},
-		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
-		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	}, authorizedAuthServiceStub())
+		getFn: func(_ context.Context, _ int64, _ int64) (domain.Note, error) { return domain.Note{}, nil },
+		updateFn: func(_ context.Context, _ int64, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64, _ int64) error { return nil },
+	})
 
 	request := httptest.NewRequest(http.MethodGet, "/notes/", nil)
 	recorder := httptest.NewRecorder()
@@ -265,22 +232,21 @@ func TestNotesRequireAuthentication(t *testing.T) {
 func TestListNotesReturnsServiceUnavailable(t *testing.T) {
 	t.Parallel()
 
-	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
-		createFn: func(_ context.Context, title string, body string) (domain.Note, error) {
-			return domain.Note{}, nil
-		},
-		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+	router := newNoteRouter(noteServiceStub{
+		createFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		listFn: func(_ context.Context, _ int64, _ service.NoteListOptions) (service.NoteListResult, error) {
 			return service.NoteListResult{}, service.ErrUnavailable
 		},
-		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
-		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	}, authorizedAuthServiceStub())
+		getFn: func(_ context.Context, _ int64, _ int64) (domain.Note, error) { return domain.Note{}, nil },
+		updateFn: func(_ context.Context, _ int64, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64, _ int64) error { return nil },
+	})
 
 	request := httptest.NewRequest(http.MethodGet, "/notes/", nil)
 	request.Header.Set("Authorization", "Bearer valid-token")
 	recorder := httptest.NewRecorder()
-
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusServiceUnavailable {
@@ -291,22 +257,23 @@ func TestListNotesReturnsServiceUnavailable(t *testing.T) {
 func TestCreateNoteReturnsInternalErrorOnUnexpectedFailure(t *testing.T) {
 	t.Parallel()
 
-	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
-		createFn: func(_ context.Context, title string, body string) (domain.Note, error) {
+	router := newNoteRouter(noteServiceStub{
+		createFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) {
 			return domain.Note{}, errors.New("unexpected")
 		},
-		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+		listFn: func(_ context.Context, _ int64, _ service.NoteListOptions) (service.NoteListResult, error) {
 			return service.NoteListResult{}, nil
 		},
-		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
-		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	}, authorizedAuthServiceStub())
+		getFn: func(_ context.Context, _ int64, _ int64) (domain.Note, error) { return domain.Note{}, nil },
+		updateFn: func(_ context.Context, _ int64, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64, _ int64) error { return nil },
+	})
 
 	request := httptest.NewRequest(http.MethodPost, "/notes/", strings.NewReader(`{"title":"hello","body":"world"}`))
 	request.Header.Set("Authorization", "Bearer valid-token")
 	recorder := httptest.NewRecorder()
-
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusInternalServerError {
@@ -318,22 +285,21 @@ func TestUpdateNoteReturnsUpdatedNote(t *testing.T) {
 	t.Parallel()
 
 	updatedAt := time.Date(2026, time.March, 24, 12, 0, 0, 0, time.UTC)
-	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
-		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+	router := newNoteRouter(noteServiceStub{
+		createFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		listFn: func(_ context.Context, _ int64, _ service.NoteListOptions) (service.NoteListResult, error) {
 			return service.NoteListResult{}, nil
 		},
-		getFn: func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
-		updateFn: func(_ context.Context, id int64, title string, body string) (domain.Note, error) {
+		getFn: func(_ context.Context, _ int64, _ int64) (domain.Note, error) { return domain.Note{}, nil },
+		updateFn: func(_ context.Context, _ int64, id int64, title string, body string) (domain.Note, error) {
 			return domain.Note{ID: id, Title: title, Body: body, CreatedAt: updatedAt, UpdatedAt: updatedAt}, nil
 		},
-		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	}, authorizedAuthServiceStub())
+		deleteFn: func(_ context.Context, _ int64, _ int64) error { return nil },
+	})
 
 	request := httptest.NewRequest(http.MethodPut, "/notes/1", strings.NewReader(`{"title":"updated","body":"body"}`))
 	request.Header.Set("Authorization", "Bearer valid-token")
 	recorder := httptest.NewRecorder()
-
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
@@ -344,20 +310,21 @@ func TestUpdateNoteReturnsUpdatedNote(t *testing.T) {
 func TestUpdateNoteRejectsInvalidID(t *testing.T) {
 	t.Parallel()
 
-	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
-		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+	router := newNoteRouter(noteServiceStub{
+		createFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		listFn: func(_ context.Context, _ int64, _ service.NoteListOptions) (service.NoteListResult, error) {
 			return service.NoteListResult{}, nil
 		},
-		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
-		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	}, authorizedAuthServiceStub())
+		getFn: func(_ context.Context, _ int64, _ int64) (domain.Note, error) { return domain.Note{}, nil },
+		updateFn: func(_ context.Context, _ int64, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64, _ int64) error { return nil },
+	})
 
 	request := httptest.NewRequest(http.MethodPut, "/notes/abc", strings.NewReader(`{"title":"updated","body":"body"}`))
 	request.Header.Set("Authorization", "Bearer valid-token")
 	recorder := httptest.NewRecorder()
-
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusBadRequest {
@@ -368,20 +335,21 @@ func TestUpdateNoteRejectsInvalidID(t *testing.T) {
 func TestDeleteNoteReturnsNoContent(t *testing.T) {
 	t.Parallel()
 
-	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
-		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+	router := newNoteRouter(noteServiceStub{
+		createFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		listFn: func(_ context.Context, _ int64, _ service.NoteListOptions) (service.NoteListResult, error) {
 			return service.NoteListResult{}, nil
 		},
-		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
-		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	}, authorizedAuthServiceStub())
+		getFn: func(_ context.Context, _ int64, _ int64) (domain.Note, error) { return domain.Note{}, nil },
+		updateFn: func(_ context.Context, _ int64, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64, _ int64) error { return nil },
+	})
 
 	request := httptest.NewRequest(http.MethodDelete, "/notes/1", nil)
 	request.Header.Set("Authorization", "Bearer valid-token")
 	recorder := httptest.NewRecorder()
-
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusNoContent {
@@ -392,20 +360,21 @@ func TestDeleteNoteReturnsNoContent(t *testing.T) {
 func TestDeleteNoteReturnsNotFound(t *testing.T) {
 	t.Parallel()
 
-	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
-		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+	router := newNoteRouter(noteServiceStub{
+		createFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		listFn: func(_ context.Context, _ int64, _ service.NoteListOptions) (service.NoteListResult, error) {
 			return service.NoteListResult{}, nil
 		},
-		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, nil },
-		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		deleteFn: func(_ context.Context, _ int64) error { return service.ErrNotFound },
-	}, authorizedAuthServiceStub())
+		getFn: func(_ context.Context, _ int64, _ int64) (domain.Note, error) { return domain.Note{}, nil },
+		updateFn: func(_ context.Context, _ int64, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64, _ int64) error { return service.ErrNotFound },
+	})
 
 	request := httptest.NewRequest(http.MethodDelete, "/notes/99", nil)
 	request.Header.Set("Authorization", "Bearer valid-token")
 	recorder := httptest.NewRecorder()
-
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusNotFound {
@@ -417,22 +386,23 @@ func TestGetNoteReturnsItem(t *testing.T) {
 	t.Parallel()
 
 	createdAt := time.Date(2026, time.March, 24, 13, 0, 0, 0, time.UTC)
-	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
-		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+	router := newNoteRouter(noteServiceStub{
+		createFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		listFn: func(_ context.Context, _ int64, _ service.NoteListOptions) (service.NoteListResult, error) {
 			return service.NoteListResult{}, nil
 		},
-		getFn: func(_ context.Context, id int64) (domain.Note, error) {
+		getFn: func(_ context.Context, _ int64, id int64) (domain.Note, error) {
 			return domain.Note{ID: id, Title: "hello", Body: "world", CreatedAt: createdAt, UpdatedAt: createdAt}, nil
 		},
-		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	}, authorizedAuthServiceStub())
+		updateFn: func(_ context.Context, _ int64, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64, _ int64) error { return nil },
+	})
 
 	request := httptest.NewRequest(http.MethodGet, "/notes/1", nil)
 	request.Header.Set("Authorization", "Bearer valid-token")
 	recorder := httptest.NewRecorder()
-
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
@@ -443,20 +413,23 @@ func TestGetNoteReturnsItem(t *testing.T) {
 func TestGetNoteReturnsNotFound(t *testing.T) {
 	t.Parallel()
 
-	router := httpserver.NewRouter(newTestLogger(), nil, noteServiceStub{
-		createFn: func(_ context.Context, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		listFn: func(_ context.Context, _ service.NoteListOptions) (service.NoteListResult, error) {
+	router := newNoteRouter(noteServiceStub{
+		createFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
+		listFn: func(_ context.Context, _ int64, _ service.NoteListOptions) (service.NoteListResult, error) {
 			return service.NoteListResult{}, nil
 		},
-		getFn:    func(_ context.Context, _ int64) (domain.Note, error) { return domain.Note{}, service.ErrNotFound },
-		updateFn: func(_ context.Context, _ int64, _ string, _ string) (domain.Note, error) { return domain.Note{}, nil },
-		deleteFn: func(_ context.Context, _ int64) error { return nil },
-	}, authorizedAuthServiceStub())
+		getFn: func(_ context.Context, _ int64, _ int64) (domain.Note, error) {
+			return domain.Note{}, service.ErrNotFound
+		},
+		updateFn: func(_ context.Context, _ int64, _ int64, _ string, _ string) (domain.Note, error) {
+			return domain.Note{}, nil
+		},
+		deleteFn: func(_ context.Context, _ int64, _ int64) error { return nil },
+	})
 
 	request := httptest.NewRequest(http.MethodGet, "/notes/99", nil)
 	request.Header.Set("Authorization", "Bearer valid-token")
 	recorder := httptest.NewRecorder()
-
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusNotFound {

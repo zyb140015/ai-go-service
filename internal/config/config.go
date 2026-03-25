@@ -17,6 +17,7 @@ const (
 	defaultShutdownTimeout   = 10 * time.Second
 	defaultLogLevel          = "INFO"
 	defaultAuthTokenTTL      = 24 * time.Hour
+	defaultGoAdminTimeout    = 10 * time.Second
 )
 
 // Config stores application configuration loaded from the environment.
@@ -31,6 +32,8 @@ type Config struct {
 	DatabaseURL       string
 	AuthTokenSecret   string
 	AuthTokenTTL      time.Duration
+	GoAdminBaseURL    string
+	GoAdminTimeout    time.Duration
 }
 
 // Load returns the application configuration using environment overrides when present.
@@ -46,6 +49,8 @@ func Load() (Config, error) {
 		DatabaseURL:       getString("DATABASE_URL", ""),
 		AuthTokenSecret:   getString("AUTH_TOKEN_SECRET", ""),
 		AuthTokenTTL:      getDuration("AUTH_TOKEN_TTL", defaultAuthTokenTTL),
+		GoAdminBaseURL:    getString("GOADMIN_BASE_URL", ""),
+		GoAdminTimeout:    getDuration("GOADMIN_TIMEOUT", defaultGoAdminTimeout),
 	}
 
 	if config.HTTPAddr == "" {
@@ -74,6 +79,14 @@ func Load() (Config, error) {
 
 	if config.AuthTokenTTL <= 0 {
 		return Config{}, fmt.Errorf("AUTH_TOKEN_TTL must be positive")
+	}
+
+	if config.GoAdminBaseURL == "" {
+		return Config{}, fmt.Errorf("GOADMIN_BASE_URL must not be empty")
+	}
+
+	if config.GoAdminTimeout <= 0 {
+		return Config{}, fmt.Errorf("GOADMIN_TIMEOUT must be positive")
 	}
 
 	return config, nil

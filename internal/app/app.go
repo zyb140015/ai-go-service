@@ -9,6 +9,7 @@ import (
 	"ai-go-service/internal/auth"
 	"ai-go-service/internal/config"
 	httpserver "ai-go-service/internal/http"
+	"ai-go-service/internal/integration/goadmin"
 	"ai-go-service/internal/observability"
 	"ai-go-service/internal/service"
 	"ai-go-service/internal/store/postgres"
@@ -41,21 +42,30 @@ func New(ctx context.Context) (*App, error) {
 
 	noteRepository := postgres.NewNoteRepository(db)
 	noteService := service.NewNoteService(noteRepository)
+	desktopDataRepository := postgres.NewDesktopDataRepository(db)
+	desktopDataService := service.NewDesktopDataService(desktopDataRepository)
 	userRepository := postgres.NewUserRepository(db)
+	refreshTokenRepository := postgres.NewRefreshTokenRepository(db)
+	goAdminClient := goadmin.NewClient(appConfig.GoAdminBaseURL, appConfig.GoAdminTimeout)
+	desktopAuthService := service.NewDesktopAuthService(goAdminClient)
+	desktopMenuService := service.NewDesktopMenuService(goAdminClient, desktopDataRepository)
+	if err := desktopDataService.EnsureSeedData(ctx); err != nil {
+		return nil, fmt.Errorf("ensure desktop seed data: %w", err)
+	}
 
 	var authService *service.AuthService
-	if userRepository != nil && appConfig.AuthTokenSecret != "" {
+	if userRepository != nil && refreshTokenRepository != nil && appConfig.AuthTokenSecret != "" {
 		tokenManager, err := auth.NewTokenManager(appConfig.AuthTokenSecret, nil)
 		if err != nil {
 			return nil, fmt.Errorf("create token manager: %w", err)
 		}
 
-		authService = service.NewAuthService(userRepository, tokenManager, appConfig.AuthTokenTTL)
+		authService = service.NewAuthService(userRepository, refreshTokenRepository, tokenManager, appConfig.AuthTokenTTL)
 	}
 
 	server := &http.Server{
 		Addr:              appConfig.HTTPAddr,
-		Handler:           httpserver.NewRouter(logger, db, noteService, authService),
+		Handler:           httpserver.NewRouter(logger, db, noteService, authService, desktopAuthService, desktopDataService, desktopMenuService),
 		ReadTimeout:       appConfig.ReadTimeout,
 		ReadHeaderTimeout: appConfig.ReadHeaderTimeout,
 		WriteTimeout:      appConfig.WriteTimeout,

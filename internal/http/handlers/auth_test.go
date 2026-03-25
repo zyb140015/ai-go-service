@@ -64,7 +64,7 @@ func TestRegisterHandlerReturnsTokenPair(t *testing.T) {
 			return service.AuthResult{}, nil
 		},
 		currentFn: func(_ context.Context, _ string) (domain.User, error) { return domain.User{}, nil },
-	})
+	}, nil, nil)
 
 	request := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"email":"user@example.com","displayName":"Demo","password":"password123"}`))
 	recorder := httptest.NewRecorder()
@@ -100,7 +100,7 @@ func TestLoginHandlerRejectsInvalidCredentials(t *testing.T) {
 			return service.AuthResult{}, nil
 		},
 		currentFn: func(_ context.Context, _ string) (domain.User, error) { return domain.User{}, nil },
-	})
+	}, nil, nil)
 
 	request := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"user@example.com","password":"wrong"}`))
 	recorder := httptest.NewRecorder()
@@ -133,7 +133,7 @@ func TestRefreshHandlerReturnsNewTokens(t *testing.T) {
 			return service.AuthResult{}, nil
 		},
 		currentFn: func(_ context.Context, _ string) (domain.User, error) { return domain.User{}, nil },
-	})
+	}, nil, nil)
 
 	request := httptest.NewRequest(http.MethodPost, "/auth/refresh", strings.NewReader(`{"refreshToken":"refresh-123"}`))
 	recorder := httptest.NewRecorder()
@@ -160,7 +160,7 @@ func TestLogoutHandlerRequiresBearerToken(t *testing.T) {
 			return service.AuthResult{}, nil
 		},
 		currentFn: func(_ context.Context, _ string) (domain.User, error) { return domain.User{}, nil },
-	})
+	}, nil, nil)
 
 	request := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 	recorder := httptest.NewRecorder()
@@ -191,7 +191,7 @@ func TestChangePasswordReturnsNewTokens(t *testing.T) {
 			return service.AuthResult{User: domain.User{ID: 1, Email: "user@example.com", DisplayName: "Demo", CreatedAt: now, UpdatedAt: now}, AccessToken: "access-789", RefreshToken: "refresh-789"}, nil
 		},
 		currentFn: func(_ context.Context, _ string) (domain.User, error) { return domain.User{}, nil },
-	})
+	}, nil, nil)
 
 	request := httptest.NewRequest(http.MethodPost, "/auth/change-password", strings.NewReader(`{"currentPassword":"oldpass123","newPassword":"newpass123"}`))
 	request.Header.Set("Authorization", "Bearer valid-token")
@@ -225,7 +225,7 @@ func TestCurrentUserHandlerReturnsUser(t *testing.T) {
 			}
 			return domain.User{ID: 1, Email: "user@example.com", DisplayName: "Demo", CreatedAt: now, UpdatedAt: now}, nil
 		},
-	})
+	}, nil, nil)
 
 	request := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
 	request.Header.Set("Authorization", "Bearer valid-token")

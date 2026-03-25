@@ -1,8 +1,10 @@
 GO ?= go
 SQLC ?= sqlc
 MIGRATE ?= migrate
+LOCAL_GOADMIN_BASE_URL ?= http://127.0.0.1:8081
+LOCAL_DATABASE_URL ?= postgres://postgres:postgres@localhost:5432/ai_go_service?sslmode=disable
 
-.PHONY: test vet build run lint tidy sqlc db-up db-down db-logs migrate-up migrate-down migrate-create openapi-lint
+.PHONY: test vet build run run-desktop-local lint tidy sqlc db-up db-down db-logs migrate-up migrate-down migrate-create openapi-lint
 
 test:
 	$(GO) test ./...
@@ -15,6 +17,9 @@ build:
 
 run:
 	$(GO) run ./cmd/server
+
+run-desktop-local:
+	GOADMIN_BASE_URL="$(LOCAL_GOADMIN_BASE_URL)" DATABASE_URL="$(LOCAL_DATABASE_URL)" $(GO) run ./cmd/server
 
 lint:
 	golangci-lint run

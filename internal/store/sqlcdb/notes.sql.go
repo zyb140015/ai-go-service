@@ -14,14 +14,20 @@ import (
 const countNotes = `-- name: CountNotes :one
 SELECT COUNT(*)
 FROM app_notes
-WHERE CASE
-    WHEN $1::text IS NULL OR $1::text = '' THEN TRUE
-    ELSE title ILIKE '%' || $1::text || '%'
+WHERE user_id = $1
+  AND CASE
+    WHEN $2::text IS NULL OR $2::text = '' THEN TRUE
+    ELSE title ILIKE '%' || $2::text || '%'
 END
 `
 
-func (q *Queries) CountNotes(ctx context.Context, queryText pgtype.Text) (int64, error) {
-	row := q.db.QueryRow(ctx, countNotes, queryText)
+type CountNotesParams struct {
+	UserID    pgtype.Int8
+	QueryText pgtype.Text
+}
+
+func (q *Queries) CountNotes(ctx context.Context, arg CountNotesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countNotes, arg.UserID, arg.QueryText)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -29,25 +35,38 @@ func (q *Queries) CountNotes(ctx context.Context, queryText pgtype.Text) (int64,
 
 const createNote = `-- name: CreateNote :one
 INSERT INTO app_notes (
+    user_id,
     title,
     body
 ) VALUES (
     $1,
-    $2
+    $2,
+    $3
 )
-RETURNING id, title, body, created_at, updated_at
+RETURNING id, user_id, title, body, created_at, updated_at
 `
 
 type CreateNoteParams struct {
-	Title string
-	Body  string
+	UserID pgtype.Int8
+	Title  string
+	Body   string
 }
 
-func (q *Queries) CreateNote(ctx context.Context, arg CreateNoteParams) (AppNote, error) {
-	row := q.db.QueryRow(ctx, createNote, arg.Title, arg.Body)
-	var i AppNote
+type CreateNoteRow struct {
+	ID        int64
+	UserID    pgtype.Int8
+	Title     string
+	Body      string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) CreateNote(ctx context.Context, arg CreateNoteParams) (CreateNoteRow, error) {
+	row := q.db.QueryRow(ctx, createNote, arg.UserID, arg.Title, arg.Body)
+	var i CreateNoteRow
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Title,
 		&i.Body,
 		&i.CreatedAt,
@@ -59,10 +78,16 @@ func (q *Queries) CreateNote(ctx context.Context, arg CreateNoteParams) (AppNote
 const deleteNote = `-- name: DeleteNote :execrows
 DELETE FROM app_notes
 WHERE id = $1
+  AND user_id = $2
 `
 
-func (q *Queries) DeleteNote(ctx context.Context, id int64) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteNote, id)
+type DeleteNoteParams struct {
+	ID     int64
+	UserID pgtype.Int8
+}
+
+func (q *Queries) DeleteNote(ctx context.Context, arg DeleteNoteParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteNote, arg.ID, arg.UserID)
 	if err != nil {
 		return 0, err
 	}
@@ -70,16 +95,32 @@ func (q *Queries) DeleteNote(ctx context.Context, id int64) (int64, error) {
 }
 
 const getNoteByID = `-- name: GetNoteByID :one
-SELECT id, title, body, created_at, updated_at
+SELECT id, user_id, title, body, created_at, updated_at
 FROM app_notes
 WHERE id = $1
+  AND user_id = $2
 `
 
-func (q *Queries) GetNoteByID(ctx context.Context, id int64) (AppNote, error) {
-	row := q.db.QueryRow(ctx, getNoteByID, id)
-	var i AppNote
+type GetNoteByIDParams struct {
+	ID     int64
+	UserID pgtype.Int8
+}
+
+type GetNoteByIDRow struct {
+	ID        int64
+	UserID    pgtype.Int8
+	Title     string
+	Body      string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetNoteByID(ctx context.Context, arg GetNoteByIDParams) (GetNoteByIDRow, error) {
+	row := q.db.QueryRow(ctx, getNoteByID, arg.ID, arg.UserID)
+	var i GetNoteByIDRow
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Title,
 		&i.Body,
 		&i.CreatedAt,
@@ -89,23 +130,25 @@ func (q *Queries) GetNoteByID(ctx context.Context, id int64) (AppNote, error) {
 }
 
 const listNotes = `-- name: ListNotes :many
-SELECT id, title, body, created_at, updated_at
+SELECT id, user_id, title, body, created_at, updated_at
 FROM app_notes
-WHERE CASE
-    WHEN $1::text IS NULL OR $1::text = '' THEN TRUE
-    ELSE title ILIKE '%' || $1::text || '%'
+WHERE user_id = $1
+  AND CASE
+    WHEN $2::text IS NULL OR $2::text = '' THEN TRUE
+    ELSE title ILIKE '%' || $2::text || '%'
 END
 ORDER BY
-    CASE WHEN $2::text = 'title' AND $3::text = 'asc' THEN title END ASC,
-    CASE WHEN $2::text = 'title' AND $3::text = 'desc' THEN title END DESC,
-    CASE WHEN $2::text = 'created_at' AND $3::text = 'asc' THEN created_at END ASC,
-    CASE WHEN $2::text = 'created_at' AND $3::text = 'desc' THEN created_at END DESC,
+    CASE WHEN $3::text = 'title' AND $4::text = 'asc' THEN title END ASC,
+    CASE WHEN $3::text = 'title' AND $4::text = 'desc' THEN title END DESC,
+    CASE WHEN $3::text = 'created_at' AND $4::text = 'asc' THEN created_at END ASC,
+    CASE WHEN $3::text = 'created_at' AND $4::text = 'desc' THEN created_at END DESC,
     id DESC
-LIMIT $5
-OFFSET $4
+LIMIT $6
+OFFSET $5
 `
 
 type ListNotesParams struct {
+	UserID        pgtype.Int8
 	QueryText     pgtype.Text
 	SortField     string
 	SortDirection string
@@ -113,8 +156,18 @@ type ListNotesParams struct {
 	LimitCount    int32
 }
 
-func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]AppNote, error) {
+type ListNotesRow struct {
+	ID        int64
+	UserID    pgtype.Int8
+	Title     string
+	Body      string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]ListNotesRow, error) {
 	rows, err := q.db.Query(ctx, listNotes,
+		arg.UserID,
 		arg.QueryText,
 		arg.SortField,
 		arg.SortDirection,
@@ -125,11 +178,12 @@ func (q *Queries) ListNotes(ctx context.Context, arg ListNotesParams) ([]AppNote
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AppNote
+	var items []ListNotesRow
 	for rows.Next() {
-		var i AppNote
+		var i ListNotesRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.UserID,
 			&i.Title,
 			&i.Body,
 			&i.CreatedAt,
@@ -151,20 +205,37 @@ SET title = $2,
     body = $3,
     updated_at = NOW()
 WHERE id = $1
-RETURNING id, title, body, created_at, updated_at
+  AND user_id = $4
+RETURNING id, user_id, title, body, created_at, updated_at
 `
 
 type UpdateNoteParams struct {
-	ID    int64
-	Title string
-	Body  string
+	ID     int64
+	Title  string
+	Body   string
+	UserID pgtype.Int8
 }
 
-func (q *Queries) UpdateNote(ctx context.Context, arg UpdateNoteParams) (AppNote, error) {
-	row := q.db.QueryRow(ctx, updateNote, arg.ID, arg.Title, arg.Body)
-	var i AppNote
+type UpdateNoteRow struct {
+	ID        int64
+	UserID    pgtype.Int8
+	Title     string
+	Body      string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateNote(ctx context.Context, arg UpdateNoteParams) (UpdateNoteRow, error) {
+	row := q.db.QueryRow(ctx, updateNote,
+		arg.ID,
+		arg.Title,
+		arg.Body,
+		arg.UserID,
+	)
+	var i UpdateNoteRow
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Title,
 		&i.Body,
 		&i.CreatedAt,

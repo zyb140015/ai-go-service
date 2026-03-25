@@ -38,12 +38,47 @@ type tokenIssuerStub struct {
 	verifyFn func(ctx context.Context, token string) (domain.AuthClaims, error)
 }
 
+type refreshTokenRepositoryStub struct {
+	createFn       func(ctx context.Context, userID int64, tokenHash string, expiresAt time.Time) error
+	getActiveFn    func(ctx context.Context, userID int64, tokenHash string, now time.Time) error
+	revokeFn       func(ctx context.Context, tokenHash string) error
+	revokeByUserFn func(ctx context.Context, userID int64) error
+}
+
 func (stub tokenIssuerStub) Sign(ctx context.Context, userID int64, email string, ttl time.Duration) (string, error) {
 	return stub.signFn(ctx, userID, email, ttl)
 }
 
 func (stub tokenIssuerStub) Verify(ctx context.Context, token string) (domain.AuthClaims, error) {
 	return stub.verifyFn(ctx, token)
+}
+
+func (stub refreshTokenRepositoryStub) Create(ctx context.Context, userID int64, tokenHash string, expiresAt time.Time) error {
+	if stub.createFn == nil {
+		return nil
+	}
+	return stub.createFn(ctx, userID, tokenHash, expiresAt)
+}
+
+func (stub refreshTokenRepositoryStub) GetActive(ctx context.Context, userID int64, tokenHash string, now time.Time) error {
+	if stub.getActiveFn == nil {
+		return nil
+	}
+	return stub.getActiveFn(ctx, userID, tokenHash, now)
+}
+
+func (stub refreshTokenRepositoryStub) Revoke(ctx context.Context, tokenHash string) error {
+	if stub.revokeFn == nil {
+		return nil
+	}
+	return stub.revokeFn(ctx, tokenHash)
+}
+
+func (stub refreshTokenRepositoryStub) RevokeByUser(ctx context.Context, userID int64) error {
+	if stub.revokeByUserFn == nil {
+		return nil
+	}
+	return stub.revokeByUserFn(ctx, userID)
 }
 
 func TestAuthServiceRegisterNormalizesInput(t *testing.T) {
@@ -65,7 +100,7 @@ func TestAuthServiceRegisterNormalizesInput(t *testing.T) {
 		byEmail:  func(_ context.Context, _ string) (domain.User, error) { return domain.User{}, nil },
 		byID:     func(_ context.Context, _ int64) (domain.User, error) { return domain.User{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string) (domain.User, error) { return domain.User{}, nil },
-	}, tokenIssuerStub{
+	}, refreshTokenRepositoryStub{}, tokenIssuerStub{
 		signFn: func(_ context.Context, userID int64, email string, ttl time.Duration) (string, error) {
 			if userID != 1 || email != "user@example.com" || ttl <= 0 {
 				t.Fatalf("unexpected token sign args: %d %s %s", userID, email, ttl)
@@ -101,7 +136,7 @@ func TestAuthServiceLoginRejectsBadPassword(t *testing.T) {
 		},
 		byID:     func(_ context.Context, _ int64) (domain.User, error) { return domain.User{}, nil },
 		updateFn: func(_ context.Context, _ int64, _ string) (domain.User, error) { return domain.User{}, nil },
-	}, tokenIssuerStub{
+	}, refreshTokenRepositoryStub{}, tokenIssuerStub{
 		signFn: func(_ context.Context, _ int64, _ string, _ time.Duration) (string, error) { return "", nil },
 		verifyFn: func(_ context.Context, _ string) (domain.AuthClaims, error) {
 			return domain.AuthClaims{}, nil
@@ -124,7 +159,7 @@ func TestAuthServiceGetUserByTokenResolvesUser(t *testing.T) {
 			return domain.User{ID: id, Email: "user@example.com", DisplayName: "Demo User"}, nil
 		},
 		updateFn: func(_ context.Context, _ int64, _ string) (domain.User, error) { return domain.User{}, nil },
-	}, tokenIssuerStub{
+	}, refreshTokenRepositoryStub{}, tokenIssuerStub{
 		signFn: func(_ context.Context, _ int64, _ string, _ time.Duration) (string, error) { return "", nil },
 		verifyFn: func(_ context.Context, token string) (domain.AuthClaims, error) {
 			if token != "valid-token" {
@@ -154,7 +189,7 @@ func TestAuthServiceRefreshReturnsTokenPair(t *testing.T) {
 			return domain.User{ID: id, Email: "user@example.com", DisplayName: "Demo User"}, nil
 		},
 		updateFn: func(_ context.Context, _ int64, _ string) (domain.User, error) { return domain.User{}, nil },
-	}, tokenIssuerStub{
+	}, refreshTokenRepositoryStub{}, tokenIssuerStub{
 		signFn: func(_ context.Context, userID int64, email string, ttl time.Duration) (string, error) {
 			return email + ttl.String(), nil
 		},
@@ -186,7 +221,7 @@ func TestAuthServiceChangePasswordReturnsUnauthorizedOnWrongPassword(t *testing.
 			return domain.User{ID: id, Email: "user@example.com", PasswordHash: "$2a$12$7A2yOmKB5tQ3fQxQv8W/L.0z5Y4xXHzkwmo7aX6ixkmKuuNHYsYAG"}, nil
 		},
 		updateFn: func(_ context.Context, _ int64, _ string) (domain.User, error) { return domain.User{}, nil },
-	}, tokenIssuerStub{
+	}, refreshTokenRepositoryStub{}, tokenIssuerStub{
 		signFn: func(_ context.Context, _ int64, _ string, _ time.Duration) (string, error) { return "token", nil },
 		verifyFn: func(_ context.Context, _ string) (domain.AuthClaims, error) {
 			return domain.AuthClaims{UserID: 1, Email: "user@example.com", Expiry: time.Now().Add(time.Hour)}, nil

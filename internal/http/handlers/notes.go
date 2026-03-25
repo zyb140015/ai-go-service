@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"ai-go-service/internal/domain"
+	projectmiddleware "ai-go-service/internal/http/middleware"
 	"ai-go-service/internal/http/response"
 	"ai-go-service/internal/service"
 	"github.com/go-chi/chi/v5"
@@ -16,11 +17,11 @@ import (
 
 // NoteService defines the note use cases exposed to the HTTP layer.
 type NoteService interface {
-	CreateNote(ctx context.Context, title string, body string) (domain.Note, error)
-	ListNotes(ctx context.Context, options service.NoteListOptions) (service.NoteListResult, error)
-	GetNote(ctx context.Context, id int64) (domain.Note, error)
-	UpdateNote(ctx context.Context, id int64, title string, body string) (domain.Note, error)
-	DeleteNote(ctx context.Context, id int64) error
+	CreateNote(ctx context.Context, userID int64, title string, body string) (domain.Note, error)
+	ListNotes(ctx context.Context, userID int64, options service.NoteListOptions) (service.NoteListResult, error)
+	GetNote(ctx context.Context, userID int64, id int64) (domain.Note, error)
+	UpdateNote(ctx context.Context, userID int64, id int64, title string, body string) (domain.Note, error)
+	DeleteNote(ctx context.Context, userID int64, id int64) error
 }
 
 // CreateNoteRequest is the expected JSON payload for note creation.
@@ -74,7 +75,13 @@ func CreateNoteHandler(noteService NoteService) http.HandlerFunc {
 			return
 		}
 
-		note, err := noteService.CreateNote(r.Context(), request.Title, request.Body)
+		user, ok := projectmiddleware.CurrentUserFromContext(r.Context())
+		if !ok {
+			response.Error(w, http.StatusUnauthorized, response.CodeUnauthorized, "authentication failed")
+			return
+		}
+
+		note, err := noteService.CreateNote(r.Context(), user.ID, request.Title, request.Body)
 		if err != nil {
 			handleNoteError(w, err)
 			return
@@ -97,7 +104,13 @@ func ListNotesHandler(noteService NoteService) http.HandlerFunc {
 			return
 		}
 
-		result, err := noteService.ListNotes(r.Context(), options)
+		user, ok := projectmiddleware.CurrentUserFromContext(r.Context())
+		if !ok {
+			response.Error(w, http.StatusUnauthorized, response.CodeUnauthorized, "authentication failed")
+			return
+		}
+
+		result, err := noteService.ListNotes(r.Context(), user.ID, options)
 		if err != nil {
 			handleNoteError(w, err)
 			return
@@ -135,7 +148,13 @@ func GetNoteHandler(noteService NoteService) http.HandlerFunc {
 			return
 		}
 
-		note, err := noteService.GetNote(r.Context(), noteID)
+		user, ok := projectmiddleware.CurrentUserFromContext(r.Context())
+		if !ok {
+			response.Error(w, http.StatusUnauthorized, response.CodeUnauthorized, "authentication failed")
+			return
+		}
+
+		note, err := noteService.GetNote(r.Context(), user.ID, noteID)
 		if err != nil {
 			handleNoteError(w, err)
 			return
@@ -164,7 +183,13 @@ func UpdateNoteHandler(noteService NoteService) http.HandlerFunc {
 			return
 		}
 
-		note, err := noteService.UpdateNote(r.Context(), noteID, request.Title, request.Body)
+		user, ok := projectmiddleware.CurrentUserFromContext(r.Context())
+		if !ok {
+			response.Error(w, http.StatusUnauthorized, response.CodeUnauthorized, "authentication failed")
+			return
+		}
+
+		note, err := noteService.UpdateNote(r.Context(), user.ID, noteID, request.Title, request.Body)
 		if err != nil {
 			handleNoteError(w, err)
 			return
@@ -187,7 +212,13 @@ func DeleteNoteHandler(noteService NoteService) http.HandlerFunc {
 			return
 		}
 
-		if err := noteService.DeleteNote(r.Context(), noteID); err != nil {
+		user, ok := projectmiddleware.CurrentUserFromContext(r.Context())
+		if !ok {
+			response.Error(w, http.StatusUnauthorized, response.CodeUnauthorized, "authentication failed")
+			return
+		}
+
+		if err := noteService.DeleteNote(r.Context(), user.ID, noteID); err != nil {
 			handleNoteError(w, err)
 			return
 		}

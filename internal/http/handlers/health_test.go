@@ -33,7 +33,7 @@ func TestHealthz(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	recorder := httptest.NewRecorder()
 
-	httpserver.NewRouter(newTestLogger(), nil, nil, nil).ServeHTTP(recorder, request)
+	httpserver.NewRouter(newTestLogger(), nil, nil, nil, nil, nil).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
@@ -55,7 +55,7 @@ func TestNotFound(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/missing", nil)
 	recorder := httptest.NewRecorder()
 
-	httpserver.NewRouter(newTestLogger(), nil, nil, nil).ServeHTTP(recorder, request)
+	httpserver.NewRouter(newTestLogger(), nil, nil, nil, nil, nil).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("expected status %d, got %d", http.StatusNotFound, recorder.Code)
@@ -82,7 +82,7 @@ func TestReadyzReturnsServiceUnavailableWhenDependencyFails(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	recorder := httptest.NewRecorder()
 
-	httpserver.NewRouter(newTestLogger(), failingChecker{}, nil, nil).ServeHTTP(recorder, request)
+	httpserver.NewRouter(newTestLogger(), failingChecker{}, nil, nil, nil, nil).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected status %d, got %d", http.StatusServiceUnavailable, recorder.Code)

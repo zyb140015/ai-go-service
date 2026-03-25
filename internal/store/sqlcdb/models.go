@@ -14,6 +14,16 @@ type AppNote struct {
 	Body      string
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
+	UserID    pgtype.Int8
+}
+
+type AppRefreshToken struct {
+	ID        int64
+	UserID    int64
+	TokenHash string
+	ExpiresAt pgtype.Timestamptz
+	RevokedAt pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
 }
 
 type AppUser struct {

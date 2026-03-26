@@ -191,9 +191,22 @@ All configuration is loaded from environment variables.
 - `HTTP_IDLE_TIMEOUT` default: `30s`
 - `HTTP_SHUTDOWN_TIMEOUT` default: `10s`
 - `LOG_LEVEL` default: `INFO`
+- `APP_ENV` default: `development`
 - `DATABASE_URL` default: empty, which disables the PostgreSQL dependency
 - `AUTH_TOKEN_SECRET` default: empty, which disables auth handlers backed by real tokens
 - `AUTH_TOKEN_TTL` default: `24h`
+- `ENABLE_DESKTOP_SEED` default: `true` in non-production, `false` in production
+
+### Production recommendation
+
+In production, disable desktop demo seed data explicitly:
+
+```bash
+export APP_ENV=production
+export ENABLE_DESKTOP_SEED=false
+```
+
+This prevents local demo messages, announcements, monitor events, and usage statistics seed data from being written into the production database.
 
 Duration values accept standard Go duration strings such as `5s` and `1m`.
 

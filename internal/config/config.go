@@ -18,6 +18,7 @@ const (
 	defaultLogLevel          = "INFO"
 	defaultAuthTokenTTL      = 24 * time.Hour
 	defaultGoAdminTimeout    = 10 * time.Second
+	defaultAppEnv            = "development"
 )
 
 // Config stores application configuration loaded from the environment.
@@ -34,6 +35,8 @@ type Config struct {
 	AuthTokenTTL      time.Duration
 	GoAdminBaseURL    string
 	GoAdminTimeout    time.Duration
+	AppEnv            string
+	EnableDesktopSeed bool
 }
 
 // Load returns the application configuration using environment overrides when present.
@@ -51,7 +54,9 @@ func Load() (Config, error) {
 		AuthTokenTTL:      getDuration("AUTH_TOKEN_TTL", defaultAuthTokenTTL),
 		GoAdminBaseURL:    getString("GOADMIN_BASE_URL", ""),
 		GoAdminTimeout:    getDuration("GOADMIN_TIMEOUT", defaultGoAdminTimeout),
+		AppEnv:            strings.ToLower(getString("APP_ENV", defaultAppEnv)),
 	}
+	config.EnableDesktopSeed = getBool("ENABLE_DESKTOP_SEED", config.AppEnv != "production")
 
 	if config.HTTPAddr == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR must not be empty")
@@ -118,4 +123,20 @@ func getDuration(key string, fallback time.Duration) time.Duration {
 	}
 
 	return fallback
+}
+
+func getBool(key string, fallback bool) bool {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }

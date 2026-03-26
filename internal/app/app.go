@@ -49,8 +49,10 @@ func New(ctx context.Context) (*App, error) {
 	goAdminClient := goadmin.NewClient(appConfig.GoAdminBaseURL, appConfig.GoAdminTimeout)
 	desktopAuthService := service.NewDesktopAuthService(goAdminClient)
 	desktopMenuService := service.NewDesktopMenuService(goAdminClient, desktopDataRepository)
-	if err := desktopDataService.EnsureSeedData(ctx); err != nil {
-		return nil, fmt.Errorf("ensure desktop seed data: %w", err)
+	if appConfig.EnableDesktopSeed {
+		if err := desktopDataService.EnsureSeedData(ctx); err != nil {
+			return nil, fmt.Errorf("ensure desktop seed data: %w", err)
+		}
 	}
 
 	var authService *service.AuthService
